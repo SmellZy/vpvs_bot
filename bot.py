@@ -122,31 +122,34 @@ BANK_FIELDS = {
         "use_stream_clear": False,
     },
     "privatbank": {
-        "page_h": 841.9,
-        "page_w": 595.3,
+        "page_h": 841.880,
+        "page_w": 595.280,
         "personal_stream_indices": [],
+        "stream_ys": [652.28, 640.2, 628.13, 612.3, 600.22, 588.15, 576.08, 520.27],
         "fields": {
-            "name":        (89.0,  651.2),
-            "dob":         (76.5,  639.1),
-            "tin":         (42.0,  627.1),
-            "doc_number":  (212.5, 611.2),
-            "issued_by":   (93.0,  599.1),
-            "issue_date":  (80.0,  587.1),
-            "address":     (110.0, 575.0),
-            "iban":        (48.5,  519.2),
+            # X і Y взяті напряму з content stream (baseline)
+            "name":        (86.51,  652.28),
+            "dob":         (73.99,  640.20),
+            "tin":         (39.49,  628.13),
+            "doc_number":  (210.00, 612.30),
+            "issued_by":   (90.49,  600.22),
+            "issue_date":  (77.51,  588.15),
+            "address":     (107.51, 576.08),
+            "iban":        (45.98,  520.27),
         },
         "field_rects": {
-            "name":        (120, 10),
-            "dob":         (80,  10),
-            "tin":         (80,  10),
-            "doc_number":  (250, 10),
-            "issued_by":   (60,  10),
-            "issue_date":  (80,  10),
-            "address":     (400, 10),
-            "iban":        (220, 10),
+            "name":        (200, 11),
+            "dob":         (60,  11),
+            "tin":         (65,  11),
+            "doc_number":  (310, 11),
+            "issued_by":   (40,  11),
+            "issue_date":  (60,  11),
+            "address":     (430, 11),
+            "iban":        (165, 11),
         },
-        "font_size": 9,
+        "font_size": 9.0,
         "use_stream_clear": False,
+        "use_stream_tj_remove": True,
     },
 }
 
@@ -215,24 +218,127 @@ def generate_mock_transactions_monobank(count: int = 5):
 
 # ── PDF editing ─────────────────────────────────────────────────────────────
 
+def _draw_mock_transactions_monobank(c, page_h, page_w):
+    """Перекриває першу сторінку таблиці транзакцій Monobank новими даними."""
+    # Таблиця транзакцій на першій сторінці починається приблизно з y=520 (rl)
+    # і закінчується внизу. Заливаємо білим і малюємо нові рядки.
+    TABLE_TOP    = 520.0   # reportlab y (від низу) де починається таблиця
+    TABLE_BOTTOM = 30.0
+    TABLE_LEFT   = 28.0
+    TABLE_RIGHT  = 567.0
+
+    # Білий прямокутник поверх всієї таблиці
+    c.setFillColorRGB(1, 1, 1)
+    c.rect(TABLE_LEFT, TABLE_BOTTOM, TABLE_RIGHT - TABLE_LEFT,
+           TABLE_TOP - TABLE_BOTTOM, fill=1, stroke=0)
+
+    # Генеруємо транзакції
+    txns, final_balance = generate_mock_transactions_monobank(random.randint(8, 14))
+
+    # Малюємо рядки
+    row_h  = 28.0
+    y_cur  = TABLE_TOP - row_h
+    c.setFillColorRGB(0, 0, 0)
+
+    COL_DATE  = TABLE_LEFT + 2
+    COL_DESC  = TABLE_LEFT + 95
+    COL_MCC   = TABLE_LEFT + 260
+    COL_AMT   = TABLE_LEFT + 310
+    COL_BAL   = TABLE_LEFT + 420
+
+    for txn in txns:
+        if y_cur < TABLE_BOTTOM + 15:
+            break
+
+        # Лінія розділювача
+        c.setStrokeColorRGB(0.85, 0.85, 0.85)
+        c.line(TABLE_LEFT, y_cur + row_h, TABLE_RIGHT, y_cur + row_h)
+        c.setStrokeColorRGB(0, 0, 0)
+
+        c.setFont(PDF_FONT_REG, 7.5)
+        c.setFillColorRGB(0, 0, 0)
+
+        # Дата (два рядки)
+        date_parts = txn["date"].split("\n")
+        c.drawString(COL_DATE, y_cur + 14, date_parts[0])
+        c.drawString(COL_DATE, y_cur + 5,  date_parts[1] if len(date_parts) > 1 else "")
+
+        # Опис
+        desc = txn["description"]
+        if len(desc) > 22:
+            desc = desc[:22] + "…"
+        c.drawString(COL_DESC, y_cur + 9, desc)
+
+        # MCC
+        c.drawString(COL_MCC, y_cur + 9, txn["mcc"])
+
+        # Сума (червона якщо мінус)
+        amt = txn["amount"]
+        if amt.startswith("-"):
+            c.setFillColorRGB(0.8, 0, 0)
+        else:
+            c.setFillColorRGB(0, 0.5, 0)
+        c.drawRightString(COL_AMT + 60, y_cur + 9, amt)
+        c.setFillColorRGB(0, 0, 0)
+
+        # Баланс
+        c.drawRightString(COL_BAL + 80, y_cur + 9, txn["balance"])
+
+        y_cur -= row_h
+
+    # Оновлюємо суму витрат/надходжень у шапці (білий прямокутник + нові цифри)
+    # "Balance at the end of the period" ≈ y=482 rl
+    c.setFillColorRGB(1, 1, 1)
+    c.rect(28, 478, 200, 12, fill=1, stroke=0)
+    c.setFillColorRGB(0, 0, 0)
+    c.setFont(PDF_FONT, 8)
+    bal_str = f"{final_balance:,.2f}".replace(",", " ") + " UAH"
+    c.drawString(180, 480, bal_str)
+
+def _remove_tj_at_ys(pdf: pikepdf.Pdf, page_idx: int, stream_ys: list) -> None:
+    """Видаляє перший Tj (значення поля) для кожного Y у content stream."""
+    page = pdf.pages[page_idx]
+    content = page['/Contents']
+    raw = content.read_bytes().decode('latin-1', errors='replace')
+    
+    modified = raw
+    for sy in stream_ys:
+        # Матчимо Y як ціле або з десятковим (640.2 або 640.20)
+        sy_pattern = str(sy).rstrip('0').rstrip('.')
+        pattern = rf'(1 0 0 1 [\d.]+ {re.escape(sy_pattern)}0* Tm\n)(\([^)]*\)Tj)'
+        modified = re.sub(pattern, lambda m: m.group(1) + '()Tj', modified, count=1)
+    
+    content.write(modified.encode('latin-1', errors='replace'))
+
+
 def edit_pdf(pdf_bytes: bytes, bank: str, fields: dict, add_mock_txn: bool = False) -> bytes:
     cfg = BANK_FIELDS[bank]
     PAGE_H = cfg["page_h"]
     PAGE_W = cfg["page_w"]
 
-    # КРОК 1: pikepdf — очищаємо персональні streams (тільки Monobank)
     pdf = pikepdf.open(io.BytesIO(pdf_bytes))
-    
+
+    # Monobank: очищаємо content streams
     if cfg["use_stream_clear"] and cfg["personal_stream_indices"]:
         page = pdf.pages[0]
         content_obj = page["/Contents"]
+        total_streams = len(content_obj)
         for idx in cfg["personal_stream_indices"]:
+            if idx >= total_streams:
+                log.warning("Stream %d out of range (total=%d), skip", idx, total_streams)
+                continue
             try:
-                item = content_obj[idx]
-                resolved = pdf.get_object(item.objgen)
+                resolved = pdf.get_object(content_obj[idx].objgen)
                 resolved.write(b"", filter=pikepdf.Name("/FlateDecode"))
             except Exception as e:
                 log.warning("Stream %d clear failed: %s", idx, e)
+
+    # PrivatBank: видаляємо Tj оператори з персональними даними
+    if cfg.get("use_stream_tj_remove") and cfg.get("stream_ys"):
+        try:
+            _remove_tj_at_ys(pdf, 0, cfg["stream_ys"])
+        except Exception as e:
+            log.warning("Tj removal failed: %s", e)
 
     # Чистимо метадані
     try:
@@ -251,7 +357,7 @@ def edit_pdf(pdf_bytes: bytes, bank: str, fields: dict, add_mock_txn: bool = Fal
     pdf.save(buf)
     buf.seek(0)
 
-    # КРОК 2: reportlab overlay
+    # Reportlab overlay з новими даними
     overlay_buf = io.BytesIO()
     c = canvas.Canvas(overlay_buf, pagesize=(PAGE_W, PAGE_H))
 
@@ -264,20 +370,23 @@ def edit_pdf(pdf_bytes: bytes, bank: str, fields: dict, add_mock_txn: bool = Fal
         if not value:
             continue
 
-        # Білий прямокутник (для не-monobank)
+        # Білий прямокутник для не-monobank банків
         if not cfg["use_stream_clear"] and key in field_rects:
             w_r, h_r = field_rects[key]
             c.setFillColorRGB(1, 1, 1)
-            c.rect(x, y - 1, w_r, h_r + 3, fill=1, stroke=0)
+            c.rect(x, y - 2, w_r, h_r + 2, fill=1, stroke=0)
 
         c.setFillColorRGB(0, 0, 0)
-        c.setFont(PDF_FONT, font_size)
+        c.setFont(PDF_FONT_REG, font_size)
         c.drawString(x, y, value)
+
+    # Mock транзакції для Monobank
+    if add_mock_txn and bank == "monobank":
+        _draw_mock_transactions_monobank(c, PAGE_H, PAGE_W)
 
     c.save()
     overlay_buf.seek(0)
 
-    # КРОК 3: merge
     base_reader    = PdfReader(buf)
     overlay_reader = PdfReader(overlay_buf)
 
@@ -483,17 +592,23 @@ async def cb_mock(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
     q = update.callback_query
     await q.answer()
     ctx.user_data["add_mock"] = (q.data == "mock_yes")
-    
-    # Імітуємо update.message для _show_confirm
-    class FakeMessage:
-        async def reply_text(self, *a, **kw): return await q.message.reply_text(*a, **kw)
-    
-    class FakeUpdate:
-        message = FakeMessage()
-        callback_query = q
-    
     await q.edit_message_reply_markup(reply_markup=None)
-    return await _show_confirm(FakeUpdate(), ctx)
+
+    fields = ctx.user_data.get("fields", {})
+    bank   = ctx.user_data.get("bank", "?")
+    mock   = ctx.user_data.get("add_mock", False)
+
+    bank_name = BANK_TEMPLATES.get(bank, {}).get("name", bank)
+    lines = [f"📋 *Перевір дані для {bank_name}:*\n"]
+    for key, question, _ in FIELD_DEFS:
+        val = fields.get(key) or "_не змінено_"
+        lines.append(f"• *{question.rstrip(':')}:* {val}")
+    if mock:
+        lines.append("\n🎲 _Mock-транзакції: буде додано_")
+    lines.append("\n/confirm — застосувати\n/restart — почати спочатку")
+
+    await q.message.reply_text("\n".join(lines), parse_mode="Markdown")
+    return CONFIRM
 
 
 async def _show_confirm(update, ctx: ContextTypes.DEFAULT_TYPE) -> int:

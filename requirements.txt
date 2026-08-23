@@ -1,0 +1,4 @@
+python-telegram-bot==20.7
+pikepdf>=8.0
+reportlab>=4.0
+pypdf>=3.0

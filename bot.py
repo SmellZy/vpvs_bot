@@ -322,13 +322,18 @@ def edit_pdf(pdf_bytes: bytes, bank: str, fields: dict, add_mock_txn: bool = Fal
     if cfg["use_stream_clear"] and cfg["personal_stream_indices"]:
         page = pdf.pages[0]
         content_obj = page["/Contents"]
-        total_streams = len(content_obj)
+        # /Contents може бути масивом або одиночним стримом
+        if isinstance(content_obj, pikepdf.Array):
+            streams = list(content_obj)
+        else:
+            streams = [content_obj]
+        total_streams = len(streams)
         for idx in cfg["personal_stream_indices"]:
             if idx >= total_streams:
                 log.warning("Stream %d out of range (total=%d), skip", idx, total_streams)
                 continue
             try:
-                resolved = pdf.get_object(content_obj[idx].objgen)
+                resolved = pdf.get_object(streams[idx].objgen)
                 resolved.write(b"", filter=pikepdf.Name("/FlateDecode"))
             except Exception as e:
                 log.warning("Stream %d clear failed: %s", idx, e)

@@ -3,9 +3,9 @@ Telegram бот для редагування персональних дани�
 Підтримувані банки: Monobank, UnexBank, PrivatBank
 """
 
-import os, io, re, logging, random, copy
+import os, io, re, logging
 from pathlib import Path
-from datetime import datetime, timedelta
+from datetime import datetime
 
 import pikepdf
 from reportlab.pdfgen import canvas
@@ -58,8 +58,8 @@ else:
     CHOOSE_MODE, CHOOSE_BANK, WAIT_PDF,
     ASK_NAME, ASK_DOB, ASK_TIN, ASK_DOC_NUMBER,
     ASK_ISSUED_BY, ASK_ISSUE_DATE, ASK_ADDRESS, ASK_IBAN,
-    ASK_MOCK_TXN, CONFIRM,
-) = range(13)
+    CONFIRM,
+) = range(12)
 
 # ── Шаблони банків (вбудовані PDF як base64 або None якщо треба завантажити) ──
 # Тут ми тримаємо шляхи до шаблонів (копіюємо при старті)
@@ -109,14 +109,15 @@ BANK_FIELDS = {
         "page_w": 595.4,
         "personal_stream_indices": [],
         "fields": {
-            "name":        (87.9,  705.3),
-            "dob":         (111.4, 694.5),
-            "tin":         (85.2,  683.7),
-            "doc_number":  (220.2, 656.1),
-            "issued_by":   (99.4,  645.3),
-            "issue_date":  (112.4, 634.5),
-            "address":     (138.1, 623.4),
-            "iban":        (88.8,  583.8),
+            # Y підняті на +2.5 відносно початкових (вимірювання по реальному PDF)
+            "name":        (87.9,  707.8),
+            "dob":         (111.4, 697.0),
+            "tin":         (85.2,  686.2),
+            "doc_number":  (220.2, 658.6),
+            "issued_by":   (99.4,  647.8),
+            "issue_date":  (112.4, 637.0),
+            "address":     (138.1, 625.9),
+            "iban":        (88.8,  586.3),
         },
         # Розміри білих прямокутників (width, height)
         "field_rects": {
@@ -180,131 +181,7 @@ FIELD_KEYS  = [f[0] for f in FIELD_DEFS]
 FIELD_STATES = [ASK_NAME, ASK_DOB, ASK_TIN, ASK_DOC_NUMBER,
                 ASK_ISSUED_BY, ASK_ISSUE_DATE, ASK_ADDRESS, ASK_IBAN]
 
-# ── Mock транзакції ─────────────────────────────────────────────────────────
-MOCK_DESCRIPTIONS_MONO = [
-    ("Cafes and restaurants", "5812"),
-    ("Products and supermarkets", "5411"),
-    ("Products and supermarkets", "5499"),
-    ("Money transfer", "4829"),
-    ("Card top-up", "6012"),
-    ("Card top-up", "4829"),
-    ("Clothing and shoes", "5651"),
-    ("Beauty and health", "5912"),
-    ("Transport", "4111"),
-    ("Other", "4215"),
-]
-
-def generate_mock_transactions_monobank(count: int = 5):
-    """Генерує список mock транзакцій для Monobank з правильним балансом."""
-    txns = []
-    balance = round(random.uniform(500, 3000), 2)
-    
-    now = datetime.now()
-    for i in range(count):
-        date = now - timedelta(days=random.randint(1, 60))
-        date_str = date.strftime("%d.%m.%Y\n%H:%M:%S")
-        
-        desc, mcc = random.choice(MOCK_DESCRIPTIONS_MONO)
-        
-        if "top-up" in desc or "transfer" in desc and random.random() > 0.5:
-            amount = round(random.uniform(500, 5000), 2)
-            sign = 1
-        else:
-            amount = round(random.uniform(50, 800), 2)
-            sign = -1
-        
-        op_amount = amount * sign
-        balance += op_amount
-        balance = round(balance, 2)
-        
-        txns.append({
-            "date": date_str,
-            "description": desc,
-            "mcc": mcc,
-            "amount": f"{op_amount:,.2f}".replace(',', ' '),
-            "balance": f"{balance:,.2f}".replace(',', ' '),
-        })
-    
-    return txns, round(balance, 2)
-
 # ── PDF editing ─────────────────────────────────────────────────────────────
-
-def _draw_mock_transactions_monobank(c, page_h, page_w):
-    """Перекриває першу сторінку таблиці транзакцій Monobank новими даними."""
-    # Таблиця транзакцій на першій сторінці починається приблизно з y=520 (rl)
-    # і закінчується внизу. Заливаємо білим і малюємо нові рядки.
-    TABLE_TOP    = 520.0   # reportlab y (від низу) де починається таблиця
-    TABLE_BOTTOM = 30.0
-    TABLE_LEFT   = 28.0
-    TABLE_RIGHT  = 567.0
-
-    # Білий прямокутник поверх всієї таблиці
-    c.setFillColorRGB(1, 1, 1)
-    c.rect(TABLE_LEFT, TABLE_BOTTOM, TABLE_RIGHT - TABLE_LEFT,
-           TABLE_TOP - TABLE_BOTTOM, fill=1, stroke=0)
-
-    # Генеруємо транзакції
-    txns, final_balance = generate_mock_transactions_monobank(random.randint(8, 14))
-
-    # Малюємо рядки
-    row_h  = 28.0
-    y_cur  = TABLE_TOP - row_h
-    c.setFillColorRGB(0, 0, 0)
-
-    COL_DATE  = TABLE_LEFT + 2
-    COL_DESC  = TABLE_LEFT + 95
-    COL_MCC   = TABLE_LEFT + 260
-    COL_AMT   = TABLE_LEFT + 310
-    COL_BAL   = TABLE_LEFT + 420
-
-    for txn in txns:
-        if y_cur < TABLE_BOTTOM + 15:
-            break
-
-        # Лінія розділювача
-        c.setStrokeColorRGB(0.85, 0.85, 0.85)
-        c.line(TABLE_LEFT, y_cur + row_h, TABLE_RIGHT, y_cur + row_h)
-        c.setStrokeColorRGB(0, 0, 0)
-
-        c.setFont(PDF_FONT_REG, 7.5)
-        c.setFillColorRGB(0, 0, 0)
-
-        # Дата (два рядки)
-        date_parts = txn["date"].split("\n")
-        c.drawString(COL_DATE, y_cur + 14, date_parts[0])
-        c.drawString(COL_DATE, y_cur + 5,  date_parts[1] if len(date_parts) > 1 else "")
-
-        # Опис
-        desc = txn["description"]
-        if len(desc) > 22:
-            desc = desc[:22] + "…"
-        c.drawString(COL_DESC, y_cur + 9, desc)
-
-        # MCC
-        c.drawString(COL_MCC, y_cur + 9, txn["mcc"])
-
-        # Сума (червона якщо мінус)
-        amt = txn["amount"]
-        if amt.startswith("-"):
-            c.setFillColorRGB(0.8, 0, 0)
-        else:
-            c.setFillColorRGB(0, 0.5, 0)
-        c.drawRightString(COL_AMT + 60, y_cur + 9, amt)
-        c.setFillColorRGB(0, 0, 0)
-
-        # Баланс
-        c.drawRightString(COL_BAL + 80, y_cur + 9, txn["balance"])
-
-        y_cur -= row_h
-
-    # Оновлюємо суму витрат/надходжень у шапці (білий прямокутник + нові цифри)
-    # "Balance at the end of the period" ≈ y=482 rl
-    c.setFillColorRGB(1, 1, 1)
-    c.rect(28, 478, 200, 12, fill=1, stroke=0)
-    c.setFillColorRGB(0, 0, 0)
-    c.setFont(PDF_FONT_REG, 8)
-    bal_str = f"{final_balance:,.2f}".replace(",", " ") + " UAH"
-    c.drawString(180, 480, bal_str)
 
 def _remove_tj_at_ys(pdf: pikepdf.Pdf, page_idx: int, stream_ys: list) -> None:
     """Видаляє перший Tj (значення поля) для кожного Y у content stream."""
@@ -322,7 +199,7 @@ def _remove_tj_at_ys(pdf: pikepdf.Pdf, page_idx: int, stream_ys: list) -> None:
     content.write(modified.encode('latin-1', errors='replace'))
 
 
-def edit_pdf(pdf_bytes: bytes, bank: str, fields: dict, add_mock_txn: bool = False) -> bytes:
+def edit_pdf(pdf_bytes: bytes, bank: str, fields: dict) -> bytes:
     cfg = BANK_FIELDS[bank]
     PAGE_H = cfg["page_h"]
     PAGE_W = cfg["page_w"]
@@ -395,10 +272,6 @@ def edit_pdf(pdf_bytes: bytes, bank: str, fields: dict, add_mock_txn: bool = Fal
         c.setFillColorRGB(0, 0, 0)
         c.setFont(PDF_FONT_REG, font_size)
         c.drawString(x, y, value)
-
-    # Mock транзакції для Monobank
-    if add_mock_txn and bank == "monobank":
-        _draw_mock_transactions_monobank(c, PAGE_H, PAGE_W)
 
     c.save()
     overlay_buf.seek(0)
@@ -573,22 +446,7 @@ async def _handle_field(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
     ctx.user_data["field_idx"] = next_idx
 
     if next_idx >= len(FIELD_DEFS):
-        # Питаємо про mock транзакції
-        bank = ctx.user_data.get("bank", "")
-        if bank == "monobank":
-            kb = [
-                [InlineKeyboardButton("✅ Так, додати рандомні транзакції", callback_data="mock_yes")],
-                [InlineKeyboardButton("❌ Ні, залишити як є", callback_data="mock_no")],
-            ]
-            await update.message.reply_text(
-                "🎲 *Додати рандомні mock-транзакції?*\n"
-                "Це змінить суми витрат/надходжень у виписці для унікалізації.",
-                reply_markup=InlineKeyboardMarkup(kb),
-                parse_mode="Markdown",
-            )
-            return ASK_MOCK_TXN
-        else:
-            return await _show_confirm(update, ctx)
+        return await _show_confirm(update, ctx)
     else:
         await update.message.reply_text(_ask_field_text(next_idx), parse_mode="Markdown")
         return FIELD_STATES[next_idx]
@@ -604,46 +462,20 @@ async def ask_address(u, c):    return await _handle_field(u, c)
 async def ask_iban(u, c):       return await _handle_field(u, c)
 
 
-async def cb_mock(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
-    q = update.callback_query
-    await q.answer()
-    ctx.user_data["add_mock"] = (q.data == "mock_yes")
-    await q.edit_message_reply_markup(reply_markup=None)
-
-    fields = ctx.user_data.get("fields", {})
-    bank   = ctx.user_data.get("bank", "?")
-    mock   = ctx.user_data.get("add_mock", False)
-
-    bank_name = BANK_TEMPLATES.get(bank, {}).get("name", bank)
-    lines = [f"📋 *Перевір дані для {bank_name}:*\n"]
-    for key, question, _ in FIELD_DEFS:
-        val = fields.get(key) or "_не змінено_"
-        lines.append(f"• *{question.rstrip(':')}:* {val}")
-    if mock:
-        lines.append("\n🎲 _Mock-транзакції: буде додано_")
-    lines.append("\n/confirm — застосувати\n/restart — почати спочатку")
-
-    await q.message.reply_text("\n".join(lines), parse_mode="Markdown")
-    return CONFIRM
-
-
 async def _show_confirm(update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
-    fields = ctx.user_data.get("fields", {})
-    bank   = ctx.user_data.get("bank", "?")
-    mock   = ctx.user_data.get("add_mock", False)
-    
+    fields    = ctx.user_data.get("fields", {})
+    bank      = ctx.user_data.get("bank", "?")
     bank_name = BANK_TEMPLATES.get(bank, {}).get("name", bank)
+
     lines = [f"📋 *Перевір дані для {bank_name}:*\n"]
     for key, question, _ in FIELD_DEFS:
         val = fields.get(key) or "_не змінено_"
         lines.append(f"• *{question.rstrip(':')}:* {val}")
-    if mock:
-        lines.append("\n🎲 _Mock-транзакції: буде додано_")
     lines.append("\n/confirm — застосувати\n/restart — почати спочатку")
 
     try:
         await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
-    except:
+    except Exception:
         await update.callback_query.message.reply_text("\n".join(lines), parse_mode="Markdown")
     return CONFIRM
 
@@ -652,7 +484,6 @@ async def cmd_confirm(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
     pdf_bytes = ctx.user_data.get("pdf_bytes")
     fields    = ctx.user_data.get("fields", {})
     bank      = ctx.user_data.get("bank", "monobank")
-    add_mock  = ctx.user_data.get("add_mock", False)
 
     if not pdf_bytes:
         await update.message.reply_text("❗ PDF не знайдено. /start")
@@ -661,7 +492,7 @@ async def cmd_confirm(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
     await update.message.reply_text("⏳ Обробляю файл...")
 
     try:
-        result_bytes = edit_pdf(pdf_bytes, bank, fields, add_mock)
+        result_bytes = edit_pdf(pdf_bytes, bank, fields)
     except Exception as e:
         log.exception("PDF edit failed")
         await update.message.reply_text(f"❌ Помилка:\n{e}")
@@ -717,7 +548,6 @@ def main():
                 CallbackQueryHandler(cb_detect_bank, pattern="^detect_"),
             ],
             WAIT_PDF:     [MessageHandler(filters.Document.PDF, receive_pdf)],
-            ASK_MOCK_TXN: [CallbackQueryHandler(cb_mock, pattern="^mock_")],
             CONFIRM:      [CommandHandler("confirm", cmd_confirm), CommandHandler("restart", cmd_restart)],
             **field_handlers,
         },

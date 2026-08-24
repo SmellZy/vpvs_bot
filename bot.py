@@ -78,20 +78,31 @@ BANK_FIELDS = {
     "monobank": {
         "page_h": 839.055,
         "page_w": 595.275,
-        "personal_stream_indices": list(range(10, 19)),
+        "personal_stream_indices": [],
         "fields": {
-            # (rl_x, rl_y) в reportlab координатах (від низу)
-            "name":        (59,  718),
-            "dob":         (87,  705),
-            "tin":         (49,  691),
-            "doc_number":  (221, 663),
-            "issued_by":   (76,  650),
-            "issue_date":  (87,  636),
-            "address":     (124, 623),
-            "iban":        (56,  582),
+            # (rl_x, rl_y) взяті з content stream (stream_x + 28.346, 824.882 - stream_y)
+            "name":        (59,   718),
+            "dob":         (87,   705),
+            "tin":         (49,   691),
+            "doc_number":  (221,  663),
+            "issued_by":   (76,   650),
+            "issue_date":  (90,   636),
+            "address":     (124,  623),
+            "iban":        (56,   582),
+        },
+        # Білі прямокутники для перекриття оригінальних значень
+        "field_rects": {
+            "name":        (250, 12),
+            "dob":         (90,  12),
+            "tin":         (90,  12),
+            "doc_number":  (100, 12),
+            "issued_by":   (55,  12),
+            "issue_date":  (90,  12),
+            "address":     (445, 12),
+            "iban":        (250, 12),
         },
         "font_size": 9,
-        "use_stream_clear": True,
+        "use_stream_clear": False,
     },
     "unex": {
         "page_h": 842.4,
@@ -291,7 +302,7 @@ def _draw_mock_transactions_monobank(c, page_h, page_w):
     c.setFillColorRGB(1, 1, 1)
     c.rect(28, 478, 200, 12, fill=1, stroke=0)
     c.setFillColorRGB(0, 0, 0)
-    c.setFont(PDF_FONT, 8)
+    c.setFont(PDF_FONT_REG, 8)
     bal_str = f"{final_balance:,.2f}".replace(",", " ") + " UAH"
     c.drawString(180, 480, bal_str)
 

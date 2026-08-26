@@ -548,36 +548,43 @@ def edit_pdf(pdf_bytes: bytes, bank: str, fields: dict) -> bytes:
     pdf.save(buf)
     buf.seek(0)
 
-    overlay_buf = io.BytesIO()
-    c = canvas.Canvas(overlay_buf, pagesize=(PAGE_W, PAGE_H))
-
     field_positions = cfg["fields"]
     field_rects     = cfg.get("field_rects", {})
     font_size       = cfg["font_size"]
 
-    for key, (x, y) in field_positions.items():
-        value = fields.get(key, "")
-        if not value:
-            continue
-        if not cfg["use_stream_clear"] and key in field_rects:
-            w_r, h_r = field_rects[key]
-            c.setFillColorRGB(1, 1, 1)
-            c.rect(x, y - 2, w_r, h_r + 2, fill=1, stroke=0)
-        c.setFillColorRGB(0, 0, 0)
-        c.setFont(PDF_FONT_REG, font_size)
-        c.drawString(x, y, value)
+    # Малюємо overlay тільки якщо є хоча б одне непусте поле
+    has_values = any(fields.get(k, "") for k in field_positions)
 
-    c.save()
-    overlay_buf.seek(0)
+    base_reader = PdfReader(buf)
+    writer      = PdfWriter()
 
-    base_reader    = PdfReader(buf)
-    overlay_reader = PdfReader(overlay_buf)
+    if has_values:
+        overlay_buf = io.BytesIO()
+        c = canvas.Canvas(overlay_buf, pagesize=(PAGE_W, PAGE_H))
 
-    writer = PdfWriter()
-    for i, pg in enumerate(base_reader.pages):
-        if i == 0:
-            pg.merge_page(overlay_reader.pages[0])
-        writer.add_page(pg)
+        for key, (x, y) in field_positions.items():
+            value = fields.get(key, "")
+            if not value:
+                continue
+            if not cfg["use_stream_clear"] and key in field_rects:
+                w_r, h_r = field_rects[key]
+                c.setFillColorRGB(1, 1, 1)
+                c.rect(x, y - 2, w_r, h_r + 2, fill=1, stroke=0)
+            c.setFillColorRGB(0, 0, 0)
+            c.setFont(PDF_FONT_REG, font_size)
+            c.drawString(x, y, value)
+
+        c.save()
+        overlay_buf.seek(0)
+        overlay_reader = PdfReader(overlay_buf)
+
+        for i, pg in enumerate(base_reader.pages):
+            if i == 0:
+                pg.merge_page(overlay_reader.pages[0])
+            writer.add_page(pg)
+    else:
+        for pg in base_reader.pages:
+            writer.add_page(pg)
 
     writer.add_metadata({
         "/Producer": "", "/Creator": "", "/Author": "",

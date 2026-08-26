@@ -75,11 +75,26 @@ else:
 
 # ── Стани ──────────────────────────────────────────────────────────────────
 (
+    MAIN_MENU,
     CHOOSE_MODE, CHOOSE_BANK, WAIT_PDF,
     ASK_NAME, ASK_DOB, ASK_TIN, ASK_DOC_NUMBER,
     ASK_ISSUED_BY, ASK_ISSUE_DATE, ASK_ADDRESS, ASK_IBAN,
     CONFIRM,
-) = range(12)
+    ASK_PROMO_INPUT,
+) = range(14)
+
+# ── Кнопки головного меню ───────────────────────────────────────────────────
+BTN_STATEMENT = "📄 Нова виписка"
+BTN_REFERRAL  = "🎁 Реферали"
+BTN_PROMO     = "💰 Промокод"
+BTN_LIMIT     = "📊 Мій ліміт"
+_MENU_BTNS    = {BTN_STATEMENT, BTN_REFERRAL, BTN_PROMO, BTN_LIMIT}
+
+MAIN_KB = ReplyKeyboardMarkup(
+    [[BTN_STATEMENT], [BTN_REFERRAL, BTN_PROMO, BTN_LIMIT]],
+    resize_keyboard=True,
+    is_persistent=True,
+)
 
 # ── Шаблони банків ──────────────────────────────────────────────────────────
 TEMPLATE_DIR = Path("/app/templates")
@@ -195,6 +210,10 @@ FIELD_STATES = [
     ASK_NAME, ASK_DOB, ASK_TIN, ASK_DOC_NUMBER,
     ASK_ISSUED_BY, ASK_ISSUE_DATE, ASK_ADDRESS, ASK_IBAN,
 ]
+
+_MENU_FILTER = filters.Regex(
+    f"^({'|'.join(re.escape(b) for b in _MENU_BTNS)})$"
+)
 
 # ── Database ────────────────────────────────────────────────────────────────
 
@@ -605,38 +624,42 @@ async def _ref_link(ctx: ContextTypes.DEFAULT_TYPE, user_id: int) -> str:
 
 # ── Handlers ─────────────────────────────────────────────────────────────────
 
+async def _show_main_menu(message, user) -> int:
+    """Надсилає головне меню з постійною клавіатурою."""
+    used  = db_get_daily_usage(user.id)
+    limit = db_get_daily_limit(user.id)
+    await message.reply_text(
+        f"👋 Привіт, *{user.first_name}*!\n\n"
+        f"📊 Ліміт сьогодні: {used}/{limit} виписок\n\n"
+        "Вибери дію 👇",
+        reply_markup=MAIN_KB,
+        parse_mode="Markdown",
+    )
+    return MAIN_MENU
+
+
 async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
     user = update.effective_user
     db_ensure_user(user.id, user.username or "", user.first_name or "")
 
     # Реферальне посилання /start ref_<id>
-    args = ctx.args or []
-    if args and args[0].startswith("ref_"):
-        try:
-            referrer_id = int(args[0][4:])
-            if db_record_referral(referrer_id, user.id):
-                log.info("Referral recorded: %d → %d", referrer_id, user.id)
-        except (ValueError, Exception) as e:
-            log.warning("Referral parse error: %s", e)
+    for arg in (ctx.args or []):
+        if arg.startswith("ref_"):
+            try:
+                referrer_id = int(arg[4:])
+                if db_record_referral(referrer_id, user.id):
+                    log.info("Referral recorded: %d → %d", referrer_id, user.id)
+            except (ValueError, Exception) as e:
+                log.warning("Referral parse error: %s", e)
 
     # Перевірка підписки на канали
     not_subbed = await get_unsubscribed_channels(ctx.bot, user.id)
     if not_subbed:
         await _send_subscription_gate(update.message, not_subbed)
-        return CHOOSE_MODE  # чекаємо на cb_check_sub або cb_mode
+        return MAIN_MENU
 
     ctx.user_data.clear()
-    kb = [
-        [InlineKeyboardButton("📁 Завантажити свій PDF", callback_data="mode_upload")],
-        [InlineKeyboardButton("🏦 Вибрати шаблон банку", callback_data="mode_template")],
-    ]
-    await update.message.reply_text(
-        "👋 *Редактор банківських виписок*\n\n"
-        "Що хочеш зробити?",
-        reply_markup=InlineKeyboardMarkup(kb),
-        parse_mode="Markdown",
-    )
-    return CHOOSE_MODE
+    return await _show_main_menu(update.message, user)
 
 
 async def cb_check_sub(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
@@ -648,21 +671,119 @@ async def cb_check_sub(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
     not_subbed = await get_unsubscribed_channels(ctx.bot, user.id)
     if not_subbed:
         await q.answer("❌ Ти ще не підписаний на всі канали!", show_alert=True)
-        return CHOOSE_MODE
+        return MAIN_MENU
 
     await q.answer("✅ Підписку підтверджено!")
-    kb = [
-        [InlineKeyboardButton("📁 Завантажити свій PDF", callback_data="mode_upload")],
-        [InlineKeyboardButton("🏦 Вибрати шаблон банку", callback_data="mode_template")],
-    ]
-    await q.edit_message_text(
-        "✅ Підписку підтверджено!\n\n"
-        "👋 *Редактор банківських виписок*\n\n"
-        "Що хочеш зробити?",
-        reply_markup=InlineKeyboardMarkup(kb),
-        parse_mode="Markdown",
-    )
-    return CHOOSE_MODE
+    await q.edit_message_text("✅ Підписку підтверджено!")
+    return await _show_main_menu(q.message, user)
+
+
+# ── Головне меню — обробка кнопок ───────────────────────────────────────────
+
+async def main_menu_dispatch(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
+    """Диспетчер кнопок головного меню (у стані MAIN_MENU і як fallback)."""
+    text = (update.message.text or "").strip()
+    user = update.effective_user
+    db_ensure_user(user.id, user.username or "", user.first_name or "")
+
+    # Перевірка підписки
+    not_subbed = await get_unsubscribed_channels(ctx.bot, user.id)
+    if not_subbed:
+        await _send_subscription_gate(update.message, not_subbed)
+        return MAIN_MENU
+
+    if text == BTN_STATEMENT:
+        ctx.user_data.clear()
+        kb = [
+            [InlineKeyboardButton("📁 Завантажити свій PDF", callback_data="mode_upload")],
+            [InlineKeyboardButton("🏦 Вибрати шаблон банку", callback_data="mode_template")],
+        ]
+        await update.message.reply_text(
+            "📄 *Нова виписка*\n\nЯк хочеш отримати PDF?",
+            reply_markup=InlineKeyboardMarkup(kb),
+            parse_mode="Markdown",
+        )
+        return CHOOSE_MODE
+
+    elif text == BTN_REFERRAL:
+        refs  = db_get_referral_count(user.id)
+        limit = db_get_daily_limit(user.id)
+        used  = db_get_daily_usage(user.id)
+        ref   = await _ref_link(ctx, user.id)
+        await update.message.reply_text(
+            f"🎁 *Реферальна програма*\n\n"
+            f"За кожного запрошеного друга — *+1 виписка на день*.\n\n"
+            f"👥 Запрошено: *{refs} осіб*\n"
+            f"📊 Твій ліміт: *{limit}* (використано сьогодні: {used})\n\n"
+            f"🔗 Твоє посилання:\n`{ref}`",
+            reply_markup=MAIN_KB,
+            parse_mode="Markdown",
+        )
+        return MAIN_MENU
+
+    elif text == BTN_PROMO:
+        await update.message.reply_text(
+            "💰 *Активація промокоду*\n\nВведи код:",
+            reply_markup=MAIN_KB,
+            parse_mode="Markdown",
+        )
+        return ASK_PROMO_INPUT
+
+    elif text == BTN_LIMIT:
+        stats = db_get_user_stats(user.id)
+        refs  = stats["referrals"]
+        extra = stats["user"].get("extra_limit", 0)
+        promo = stats["promo_bonus"]
+        limit = stats["daily_limit"]
+        used  = stats["today_usage"]
+        ref   = await _ref_link(ctx, user.id)
+
+        lines = [
+            "📊 *Твій денний ліміт*\n",
+            f"• Базовий: {BASE_DAILY_LIMIT}",
+            f"• Реферали ({refs} осіб): +{refs}",
+        ]
+        if extra: lines.append(f"• Від адміна: +{extra}")
+        if promo: lines.append(f"• Промокоди: +{promo}")
+        lines += [
+            f"\n✅ *Всього: {limit} виписок/день*",
+            f"📅 Сьогодні використано: {used}/{limit}",
+            f"\n🔗 Реферальне посилання:\n`{ref}`",
+        ]
+        await update.message.reply_text(
+            "\n".join(lines),
+            reply_markup=MAIN_KB,
+            parse_mode="Markdown",
+        )
+        return MAIN_MENU
+
+    # Невідомий текст — показуємо меню знову
+    return await _show_main_menu(update.message, user)
+
+
+async def handle_promo_input(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
+    """Обробляє введений промокод у стані ASK_PROMO_INPUT."""
+    text = (update.message.text or "").strip()
+    user = update.effective_user
+
+    # Якщо натиснув кнопку меню — передаємо далі
+    if text in _MENU_BTNS:
+        return await main_menu_dispatch(update, ctx)
+
+    success, msg, _ = db_apply_promo(user.id, text)
+    if success:
+        new_limit = db_get_daily_limit(user.id)
+        await update.message.reply_text(
+            f"✅ {msg}\n📊 Новий денний ліміт: *{new_limit} виписок*",
+            reply_markup=MAIN_KB,
+            parse_mode="Markdown",
+        )
+    else:
+        await update.message.reply_text(
+            f"❌ {msg}\n\nСпробуй ще або натисни кнопку меню.",
+            reply_markup=MAIN_KB,
+        )
+    return MAIN_MENU
 
 
 async def cb_mode(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
@@ -716,7 +837,7 @@ async def receive_pdf(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
     not_subbed = await get_unsubscribed_channels(ctx.bot, user.id)
     if not_subbed:
         await _send_subscription_gate(update.message, not_subbed)
-        return CHOOSE_MODE
+        return MAIN_MENU
 
     doc = update.message.document
     if not doc or not doc.file_name.lower().endswith(".pdf"):
@@ -864,90 +985,34 @@ async def cmd_confirm(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
         caption=caption,
     )
     ctx.user_data.clear()
-    return ConversationHandler.END
+    return await _show_main_menu(update.message, user)
 
 
 async def cmd_restart(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
     ctx.user_data.clear()
-    await update.message.reply_text("🔄 Починаємо спочатку.", reply_markup=ReplyKeyboardRemove())
-    return await cmd_start(update, ctx)
+    return await _show_main_menu(update.message, update.effective_user)
 
 
 async def cmd_cancel(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
     ctx.user_data.clear()
-    await update.message.reply_text("❌ Скасовано.", reply_markup=ReplyKeyboardRemove())
-    return ConversationHandler.END
+    return await _show_main_menu(update.message, update.effective_user)
 
 
-# ── Команди користувача ───────────────────────────────────────────────────────
-
-async def cmd_ref(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    """Показує реферальне посилання та статистику."""
-    user = update.effective_user
-    db_ensure_user(user.id, user.username or "", user.first_name or "")
-
-    refs        = db_get_referral_count(user.id)
-    daily_limit = db_get_daily_limit(user.id)
-    used_today  = db_get_daily_usage(user.id)
-    ref         = await _ref_link(ctx, user.id)
-
-    await update.message.reply_text(
-        f"🎁 *Реферальна програма*\n\n"
-        f"За кожного запрошеного друга ти отримуєш *+1 виписку на день*.\n\n"
-        f"👥 Запрошено: *{refs} осіб*\n"
-        f"📊 Денний ліміт: *{daily_limit}* (використано: {used_today})\n\n"
-        f"🔗 Твоє посилання:\n`{ref}`",
-        parse_mode="Markdown",
-    )
-
-
-async def cmd_limit(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    """Показує детальну інформацію про ліміт."""
-    user = update.effective_user
-    db_ensure_user(user.id, user.username or "", user.first_name or "")
-
-    stats = db_get_user_stats(user.id)
-    refs  = stats["referrals"]
-    extra = stats["user"].get("extra_limit", 0)
-    promo = stats["promo_bonus"]
-    limit = stats["daily_limit"]
-    used  = stats["today_usage"]
-    ref   = await _ref_link(ctx, user.id)
-
-    lines = [f"📊 *Твій ліміт виписок*\n",
-             f"• Базовий: {BASE_DAILY_LIMIT}",
-             f"• Реферали ({refs} осіб): +{refs}"]
-    if extra:
-        lines.append(f"• Від адміна: +{extra}")
-    if promo:
-        lines.append(f"• Промокоди: +{promo}")
-    lines += [
-        f"\n✅ *Загальний: {limit} виписок/день*",
-        f"📅 Сьогодні: {used}/{limit}",
-        f"\n🔗 Реферальне посилання:\n`{ref}`",
-    ]
-
-    await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
-
+# ── Команди користувача (legacy — залишені для сумісності) ───────────────────
 
 async def cmd_promo(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
-    """Активує промокод: /promo КОД"""
+    """Активує промокод: /promo КОД (legacy command)"""
     user = update.effective_user
     db_ensure_user(user.id, user.username or "", user.first_name or "")
-
     args = ctx.args
     if not args:
-        await update.message.reply_text(
-            "💰 Введи промокод:\n`/promo КОД`", parse_mode="Markdown"
-        )
+        await update.message.reply_text("💰 Введи: `/promo КОД`", parse_mode="Markdown")
         return
-
     success, msg, _ = db_apply_promo(user.id, args[0])
     if success:
         new_limit = db_get_daily_limit(user.id)
         await update.message.reply_text(
-            f"✅ {msg}\n📊 Твій новий денний ліміт: *{new_limit} виписок*",
-            parse_mode="Markdown",
+            f"✅ {msg}\n📊 Новий ліміт: *{new_limit} виписок*", parse_mode="Markdown"
         )
     else:
         await update.message.reply_text(f"❌ {msg}")
@@ -1113,37 +1178,58 @@ def main():
 
     app = Application.builder().token(BOT_TOKEN).build()
 
+    # Хендлери для кожного поля (меню-кнопки як fallback всередині поля)
+    def _field_handlers(fn):
+        return [
+            MessageHandler(_MENU_FILTER,                     main_menu_dispatch),
+            MessageHandler(filters.TEXT & ~filters.COMMAND,  fn),
+            CommandHandler("skip", fn),
+        ]
+
     field_handlers = {
-        ASK_NAME:       [MessageHandler(filters.TEXT & ~filters.COMMAND, ask_name),       CommandHandler("skip", ask_name)],
-        ASK_DOB:        [MessageHandler(filters.TEXT & ~filters.COMMAND, ask_dob),        CommandHandler("skip", ask_dob)],
-        ASK_TIN:        [MessageHandler(filters.TEXT & ~filters.COMMAND, ask_tin),        CommandHandler("skip", ask_tin)],
-        ASK_DOC_NUMBER: [MessageHandler(filters.TEXT & ~filters.COMMAND, ask_doc_number), CommandHandler("skip", ask_doc_number)],
-        ASK_ISSUED_BY:  [MessageHandler(filters.TEXT & ~filters.COMMAND, ask_issued_by),  CommandHandler("skip", ask_issued_by)],
-        ASK_ISSUE_DATE: [MessageHandler(filters.TEXT & ~filters.COMMAND, ask_issue_date), CommandHandler("skip", ask_issue_date)],
-        ASK_ADDRESS:    [MessageHandler(filters.TEXT & ~filters.COMMAND, ask_address),    CommandHandler("skip", ask_address)],
-        ASK_IBAN:       [MessageHandler(filters.TEXT & ~filters.COMMAND, ask_iban),       CommandHandler("skip", ask_iban)],
+        ASK_NAME:       _field_handlers(ask_name),
+        ASK_DOB:        _field_handlers(ask_dob),
+        ASK_TIN:        _field_handlers(ask_tin),
+        ASK_DOC_NUMBER: _field_handlers(ask_doc_number),
+        ASK_ISSUED_BY:  _field_handlers(ask_issued_by),
+        ASK_ISSUE_DATE: _field_handlers(ask_issue_date),
+        ASK_ADDRESS:    _field_handlers(ask_address),
+        ASK_IBAN:       _field_handlers(ask_iban),
     }
 
     conv = ConversationHandler(
         entry_points=[
             CommandHandler("start", cmd_start),
-            MessageHandler(filters.Document.PDF, receive_pdf),
+            MessageHandler(filters.Document.PDF,  receive_pdf),
+            MessageHandler(_MENU_FILTER,           main_menu_dispatch),
         ],
         states={
+            MAIN_MENU: [
+                CallbackQueryHandler(cb_check_sub,  pattern="^check_sub$"),
+                MessageHandler(_MENU_FILTER,         main_menu_dispatch),
+                MessageHandler(filters.Document.PDF, receive_pdf),
+            ],
             CHOOSE_MODE: [
                 CallbackQueryHandler(cb_check_sub, pattern="^check_sub$"),
                 CallbackQueryHandler(cb_mode,      pattern="^mode_"),
+                MessageHandler(_MENU_FILTER,        main_menu_dispatch),
             ],
             CHOOSE_BANK: [
                 CallbackQueryHandler(cb_bank,        pattern="^bank_"),
                 CallbackQueryHandler(cb_detect_bank, pattern="^detect_"),
+                MessageHandler(_MENU_FILTER,          main_menu_dispatch),
             ],
             WAIT_PDF: [
                 MessageHandler(filters.Document.PDF, receive_pdf),
+                MessageHandler(_MENU_FILTER,          main_menu_dispatch),
             ],
             CONFIRM: [
                 CommandHandler("confirm", cmd_confirm),
                 CommandHandler("restart", cmd_restart),
+                MessageHandler(_MENU_FILTER, main_menu_dispatch),
+            ],
+            ASK_PROMO_INPUT: [
+                MessageHandler(filters.TEXT & ~filters.COMMAND, handle_promo_input),
             ],
             **field_handlers,
         },
@@ -1151,16 +1237,13 @@ def main():
             CommandHandler("cancel",  cmd_cancel),
             CommandHandler("restart", cmd_restart),
             CommandHandler("start",   cmd_start),
+            MessageHandler(_MENU_FILTER, main_menu_dispatch),
         ],
         allow_reentry=True,
     )
 
     app.add_handler(conv)
-
-    # Команди поза ConversationHandler
-    app.add_handler(CommandHandler("ref",   cmd_ref))
-    app.add_handler(CommandHandler("limit", cmd_limit))
-    app.add_handler(CommandHandler("promo", cmd_promo))
+    # /admin залишається поза ConversationHandler (адмін команда)
     app.add_handler(CommandHandler("admin", cmd_admin))
 
     log.info("🤖 Бот запущено. Адміни: %s", ADMIN_IDS)

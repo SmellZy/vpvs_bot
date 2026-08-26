@@ -1208,6 +1208,8 @@ def main():
         states={
             MAIN_MENU: [
                 CallbackQueryHandler(cb_check_sub,  pattern="^check_sub$"),
+                CommandHandler("promo", cmd_promo),
+                CommandHandler("admin", cmd_admin),
                 MessageHandler(_MENU_FILTER,         main_menu_dispatch),
                 MessageHandler(filters.Document.PDF, receive_pdf),
             ],
@@ -1239,14 +1241,14 @@ def main():
             CommandHandler("cancel",  cmd_cancel),
             CommandHandler("restart", cmd_restart),
             CommandHandler("start",   cmd_start),
+            CommandHandler("promo",   cmd_promo),
+            CommandHandler("admin",   cmd_admin),
             MessageHandler(_MENU_FILTER, main_menu_dispatch),
         ],
         allow_reentry=True,
     )
 
     app.add_handler(conv)
-    # /admin залишається поза ConversationHandler (адмін команда)
-    app.add_handler(CommandHandler("admin", cmd_admin))
 
     log.info("🤖 Бот запущено. Адміни: %s", ADMIN_IDS)
     app.run_polling(drop_pending_updates=True)

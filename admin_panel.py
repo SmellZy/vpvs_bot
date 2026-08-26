@@ -77,7 +77,7 @@ def get_users(search: str = "", page: int = 1, per_page: int = 25):
                 "SELECT u.user_id, u.username, u.first_name, u.extra_limit, u.created_at,"
                 "  (SELECT COUNT(*) FROM referrals r WHERE r.referrer_id=u.user_id) AS refs,"
                 "  (SELECT COALESCE(SUM(bonus),0) FROM user_promos p WHERE p.user_id=u.user_id) AS promo_bonus,"
-                "  (SELECT COALESCE(d.count,0) FROM daily_usage d WHERE d.user_id=u.user_id AND d.date=?) AS today_usage"
+                "  COALESCE((SELECT d.count FROM daily_usage d WHERE d.user_id=u.user_id AND d.date=?), 0) AS today_usage"
                 " FROM users u"
                 " WHERE u.username LIKE ? OR u.first_name LIKE ? OR CAST(u.user_id AS TEXT) LIKE ?"
                 " ORDER BY u.created_at DESC LIMIT ? OFFSET ?",
@@ -93,7 +93,7 @@ def get_users(search: str = "", page: int = 1, per_page: int = 25):
                 "SELECT u.user_id, u.username, u.first_name, u.extra_limit, u.created_at,"
                 "  (SELECT COUNT(*) FROM referrals r WHERE r.referrer_id=u.user_id) AS refs,"
                 "  (SELECT COALESCE(SUM(bonus),0) FROM user_promos p WHERE p.user_id=u.user_id) AS promo_bonus,"
-                "  (SELECT COALESCE(d.count,0) FROM daily_usage d WHERE d.user_id=u.user_id AND d.date=?) AS today_usage"
+                "  COALESCE((SELECT d.count FROM daily_usage d WHERE d.user_id=u.user_id AND d.date=?), 0) AS today_usage"
                 " FROM users u"
                 " ORDER BY u.created_at DESC LIMIT ? OFFSET ?",
                 (today, per_page, offset),
@@ -102,16 +102,20 @@ def get_users(search: str = "", page: int = 1, per_page: int = 25):
 
     users = []
     for r in rows:
-        daily_limit = BASE_DAILY_LIMIT + r["refs"] + r["extra_limit"] + r["promo_bonus"]
+        refs        = r["refs"]        or 0
+        extra       = r["extra_limit"] or 0
+        promo       = r["promo_bonus"] or 0
+        today_usage = r["today_usage"] or 0
+        daily_limit = BASE_DAILY_LIMIT + refs + extra + promo
         users.append({
             "user_id":     r["user_id"],
             "username":    r["username"] or "",
             "first_name":  r["first_name"] or "",
-            "extra_limit": r["extra_limit"],
-            "created_at":  str(r["created_at"])[:10],
-            "refs":        r["refs"],
-            "promo_bonus": r["promo_bonus"],
-            "today_usage": r["today_usage"],
+            "extra_limit": extra,
+            "created_at":  str(r["created_at"] or "")[:10],
+            "refs":        refs,
+            "promo_bonus": promo,
+            "today_usage": today_usage,
             "daily_limit": daily_limit,
         })
     return users, total

@@ -1,1 +1,2 @@
-worker: python3.11 bot.py
+web: python admin_panel.py
+worker: python bot.py

@@ -9,7 +9,9 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY bot.py .
+COPY bot.py admin_panel.py ./
 COPY templates/ ./templates/
 
+# За замовчуванням запускаємо бота.
+# Для адмін-панелі встанови CMD або використовуй Procfile.
 CMD ["python", "bot.py"]

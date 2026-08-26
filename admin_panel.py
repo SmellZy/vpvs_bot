@@ -54,7 +54,7 @@ def get_stats() -> dict:
             "SELECT COUNT(DISTINCT user_id) AS n FROM daily_usage WHERE date=?", (today,)
         ).fetchone()["n"]
         statements_today = conn.execute(
-            "SELECT COALESCE(SUM([count]),0) AS n FROM daily_usage WHERE date=?", (today,)
+            "SELECT COALESCE(SUM(count),0) AS n FROM daily_usage WHERE date=?", (today,)
         ).fetchone()["n"]
         total_refs   = conn.execute("SELECT COUNT(*) AS n FROM referrals").fetchone()["n"]
         total_promos = conn.execute("SELECT COUNT(*) AS n FROM promo_codes").fetchone()["n"]
@@ -77,7 +77,7 @@ def get_users(search: str = "", page: int = 1, per_page: int = 25):
                 "SELECT u.user_id, u.username, u.first_name, u.extra_limit, u.created_at,"
                 "  (SELECT COUNT(*) FROM referrals r WHERE r.referrer_id=u.user_id) AS refs,"
                 "  (SELECT COALESCE(SUM(bonus),0) FROM user_promos p WHERE p.user_id=u.user_id) AS promo_bonus,"
-                "  (SELECT COALESCE([count],0) FROM daily_usage d WHERE d.user_id=u.user_id AND d.date=?) AS today_usage"
+                "  (SELECT COALESCE(d.count,0) FROM daily_usage d WHERE d.user_id=u.user_id AND d.date=?) AS today_usage"
                 " FROM users u"
                 " WHERE u.username LIKE ? OR u.first_name LIKE ? OR CAST(u.user_id AS TEXT) LIKE ?"
                 " ORDER BY u.created_at DESC LIMIT ? OFFSET ?",
@@ -93,7 +93,7 @@ def get_users(search: str = "", page: int = 1, per_page: int = 25):
                 "SELECT u.user_id, u.username, u.first_name, u.extra_limit, u.created_at,"
                 "  (SELECT COUNT(*) FROM referrals r WHERE r.referrer_id=u.user_id) AS refs,"
                 "  (SELECT COALESCE(SUM(bonus),0) FROM user_promos p WHERE p.user_id=u.user_id) AS promo_bonus,"
-                "  (SELECT COALESCE([count],0) FROM daily_usage d WHERE d.user_id=u.user_id AND d.date=?) AS today_usage"
+                "  (SELECT COALESCE(d.count,0) FROM daily_usage d WHERE d.user_id=u.user_id AND d.date=?) AS today_usage"
                 " FROM users u"
                 " ORDER BY u.created_at DESC LIMIT ? OFFSET ?",
                 (today, per_page, offset),

@@ -919,16 +919,14 @@ async def _show_confirm(update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
     bank      = ctx.user_data.get("bank", "?")
     bank_name = BANK_TEMPLATES.get(bank, {}).get("name", bank)
 
-    lines = [f"📋 *Перевір дані для {bank_name}:*\n"]
+    lines = [f"📋 Перевір дані для {bank_name}:\n"]
     for key, question, _ in FIELD_DEFS:
-        val = fields.get(key) or "_не змінено_"
-        lines.append(f"• *{question.rstrip(':')}:* {val}")
+        val = fields.get(key) or "— не змінено —"
+        lines.append(f"• {question.rstrip(':')}: {val}")
     lines.append("\n/confirm — застосувати\n/restart — почати спочатку")
 
-    try:
-        await update.message.reply_text("\n".join(lines), parse_mode="Markdown")
-    except Exception:
-        await update.callback_query.message.reply_text("\n".join(lines), parse_mode="Markdown")
+    msg = update.message if update.message else update.callback_query.message
+    await msg.reply_text("\n".join(lines))
     return CONFIRM
 
 

@@ -3,7 +3,7 @@ Telegram бот для редагування персональних дани�
 Підтримувані банки: Monobank, UnexBank, PrivatBank
 """
 
-import os, io, re, logging, sqlite3
+import os, io, re, logging, sqlite3, random, string
 from pathlib import Path
 from datetime import datetime, date
 from contextlib import contextmanager
@@ -81,7 +81,8 @@ else:
     ASK_ISSUED_BY, ASK_ISSUE_DATE, ASK_ADDRESS, ASK_IBAN,
     CONFIRM,
     ASK_PROMO_INPUT,
-) = range(14)
+    ASK_STATEMENT_DATE,
+) = range(15)
 
 # ── Кнопки головного меню ───────────────────────────────────────────────────
 BTN_STATEMENT = "📄 Нова виписка"
@@ -113,54 +114,68 @@ BANK_FIELDS = {
         "page_w": 595.275,
         "personal_stream_indices": [],
         "fields": {
-            "name":        (59,   718),
-            "dob":         (87,   705),
-            "tin":         (49,   691),
-            "doc_number":  (221,  663),
-            "issued_by":   (76,   650),
-            "issue_date":  (90,   636),
-            "address":     (124,  623),
-            "iban":        (56,   582),
+            # Дата формування виписки (верхній правий куток)
+            "statement_date": (441,  800),
+            "name":           (59,   718),
+            "dob":            (87,   705),
+            "tin":            (49,   691),
+            "doc_number":     (221,  663),
+            "issued_by":      (76,   650),
+            "issue_date":     (90,   636),
+            "address":        (124,  623),
+            "iban":           (56,   582),
         },
         "field_rects": {
-            "name":        (250, 12),
-            "dob":         (90,  12),
-            "tin":         (90,  12),
-            "doc_number":  (100, 12),
-            "issued_by":   (55,  12),
-            "issue_date":  (90,  12),
-            "address":     (445, 12),
-            "iban":        (250, 12),
+            "statement_date": (100, 12),
+            "name":           (250, 12),
+            "dob":            (90,  12),
+            "tin":            (90,  12),
+            "doc_number":     (100, 12),
+            "issued_by":      (55,  12),
+            "issue_date":     (90,  12),
+            "address":        (445, 12),
+            "iban":           (250, 12),
         },
         "font_size": 9,
         "use_stream_clear": False,
+        # Конфіг номера виписки: None — банк не має номера
+        # format: рядок-шаблон, # = випадкова цифра, @ = літера
+        "statement_number": None,
     },
     "unex": {
         "page_h": 842.4,
         "page_w": 595.4,
         "personal_stream_indices": [],
         "fields": {
-            "name":        (87.9,  707.8),
-            "dob":         (111.4, 697.0),
-            "tin":         (85.2,  686.2),
-            "doc_number":  (220.2, 658.6),
-            "issued_by":   (99.4,  647.8),
-            "issue_date":  (112.4, 637.0),
-            "address":     (138.1, 625.9),
-            "iban":        (88.8,  586.3),
+            "statement_date": (441,  803),
+            "name":           (87.9,  707.8),
+            "dob":            (111.4, 697.0),
+            "tin":            (85.2,  686.2),
+            "doc_number":     (220.2, 658.6),
+            "issued_by":      (99.4,  647.8),
+            "issue_date":     (112.4, 637.0),
+            "address":        (138.1, 625.9),
+            "iban":           (88.8,  586.3),
         },
         "field_rects": {
-            "name":        (250, 10),
-            "dob":         (80,  10),
-            "tin":         (80,  10),
-            "doc_number":  (80,  10),
-            "issued_by":   (60,  10),
-            "issue_date":  (80,  10),
-            "address":     (350, 10),
-            "iban":        (200, 10),
+            "statement_date": (100, 10),
+            "name":           (250, 10),
+            "dob":            (80,  10),
+            "tin":            (80,  10),
+            "doc_number":     (80,  10),
+            "issued_by":      (60,  10),
+            "issue_date":     (80,  10),
+            "address":        (350, 10),
+            "iban":           (200, 10),
         },
         "font_size": 8.5,
         "use_stream_clear": False,
+        # UnexBank має номер виписки у форматі: UA##########
+        "statement_number": {
+            "x": 441, "y": 814,
+            "rect_w": 100, "rect_h": 10,
+            "format": "UA##########",   # 10 цифр після "UA"
+        },
     },
     "privatbank": {
         "page_h": 841.880,
@@ -168,45 +183,55 @@ BANK_FIELDS = {
         "personal_stream_indices": [],
         "stream_ys": [652.28, 640.2, 628.13, 612.3, 600.22, 588.15, 576.08, 520.27],
         "fields": {
-            "name":        (86.51,  652.28),
-            "dob":         (73.99,  640.20),
-            "tin":         (39.49,  628.13),
-            "doc_number":  (210.00, 612.30),
-            "issued_by":   (90.49,  600.22),
-            "issue_date":  (77.51,  588.15),
-            "address":     (107.51, 576.08),
-            "iban":        (45.98,  520.27),
+            "statement_date": (441,  803),
+            "name":           (86.51,  652.28),
+            "dob":            (73.99,  640.20),
+            "tin":            (39.49,  628.13),
+            "doc_number":     (210.00, 612.30),
+            "issued_by":      (90.49,  600.22),
+            "issue_date":     (77.51,  588.15),
+            "address":        (107.51, 576.08),
+            "iban":           (45.98,  520.27),
         },
         "field_rects": {
-            "name":        (200, 11),
-            "dob":         (60,  11),
-            "tin":         (65,  11),
-            "doc_number":  (310, 11),
-            "issued_by":   (40,  11),
-            "issue_date":  (60,  11),
-            "address":     (430, 11),
-            "iban":        (165, 11),
+            "statement_date": (100, 11),
+            "name":           (200, 11),
+            "dob":            (60,  11),
+            "tin":            (65,  11),
+            "doc_number":     (310, 11),
+            "issued_by":      (40,  11),
+            "issue_date":     (60,  11),
+            "address":        (430, 11),
+            "iban":           (165, 11),
         },
         "font_size": 9.0,
         "use_stream_clear": False,
         "use_stream_tj_remove": True,
+        # PrivatBank: номер виписки у форматі: ############## (14 цифр)
+        "statement_number": {
+            "x": 441, "y": 814,
+            "rect_w": 110, "rect_h": 11,
+            "format": "##############",  # 14 цифр
+        },
     },
 }
 
 FIELD_DEFS = [
-    ("name",       "👤 ПІБ (латиницею):",              "KOVALENKO PETRO"),
-    ("dob",        "🎂 Дата народження (ДД.ММ.РРРР):", "15.03.1990"),
-    ("tin",        "🔢 ІПН (10 цифр):",                "1234567890"),
-    ("doc_number", "📄 Серія/номер документа:",         "987654"),
-    ("issued_by",  "🏛️ Ким виданий (код):",             "1234"),
-    ("issue_date", "📅 Дата видачі (ДД.ММ.РРРР):",     "01.01.2020"),
-    ("address",    "🏠 Адреса реєстрації:",
-                   "Ukraine, city Lviv, street Franka, build 5, 79000"),
-    ("iban",       "🏦 IBAN:",                          "UA123456789012345678901234567"),
+    ("statement_date", "🗓 Дата виписки (ДД.ММ.РРРР):",    "27.08.2025"),
+    ("name",           "👤 ПІБ (латиницею):",               "KOVALENKO PETRO"),
+    ("dob",            "🎂 Дата народження (ДД.ММ.РРРР):",  "15.03.1990"),
+    ("tin",            "🔢 ІПН (10 цифр):",                 "1234567890"),
+    ("doc_number",     "📄 Серія/номер документа:",          "987654"),
+    ("issued_by",      "🏛️ Ким виданий (код):",              "1234"),
+    ("issue_date",     "📅 Дата видачі (ДД.ММ.РРРР):",      "01.01.2020"),
+    ("address",        "🏠 Адреса реєстрації:",
+                       "Ukraine, city Lviv, street Franka, build 5, 79000"),
+    ("iban",           "🏦 IBAN:",                           "UA123456789012345678901234567"),
 ]
 
 FIELD_KEYS   = [f[0] for f in FIELD_DEFS]
 FIELD_STATES = [
+    ASK_STATEMENT_DATE,
     ASK_NAME, ASK_DOB, ASK_TIN, ASK_DOC_NUMBER,
     ASK_ISSUED_BY, ASK_ISSUE_DATE, ASK_ADDRESS, ASK_IBAN,
 ]
@@ -214,6 +239,22 @@ FIELD_STATES = [
 _MENU_FILTER = filters.Regex(
     f"^({'|'.join(re.escape(b) for b in _MENU_BTNS)})$"
 )
+
+
+def _generate_statement_number(fmt: str) -> str:
+    """Генерує рандомний номер виписки за шаблоном.
+    '#' — випадкова цифра, '@' — випадкова велика літера, решта — буквально.
+    Приклад: 'UA##########' → 'UA3847291056'
+    """
+    result = []
+    for ch in fmt:
+        if ch == "#":
+            result.append(random.choice(string.digits))
+        elif ch == "@":
+            result.append(random.choice(string.ascii_uppercase))
+        else:
+            result.append(ch)
+    return "".join(result)
 
 # ── Database ────────────────────────────────────────────────────────────────
 
@@ -571,6 +612,19 @@ def edit_pdf(pdf_bytes: bytes, bank: str, fields: dict) -> bytes:
             c.setFont(PDF_FONT_REG, font_size)
             c.drawString(x, y, value)
 
+    # Авто-генерація унікального номера виписки (якщо банк підтримує)
+    stmt_num_cfg = cfg.get("statement_number")
+    if stmt_num_cfg:
+        nx, ny      = stmt_num_cfg["x"], stmt_num_cfg["y"]
+        nw, nh      = stmt_num_cfg["rect_w"], stmt_num_cfg["rect_h"]
+        num_text    = _generate_statement_number(stmt_num_cfg["format"])
+        c.setFillColorRGB(1, 1, 1)
+        c.rect(nx, ny - 2, nw, nh + 2, fill=1, stroke=0)
+        c.setFillColorRGB(0, 0, 0)
+        c.setFont(PDF_FONT_REG, font_size)
+        c.drawString(nx, ny, num_text)
+        log.info("Generated statement number for %s: %s", bank, num_text)
+
     c.save()
     overlay_buf.seek(0)
 
@@ -908,14 +962,15 @@ async def _handle_field(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
     return FIELD_STATES[next_idx]
 
 
-async def ask_name(u, c):       return await _handle_field(u, c)
-async def ask_dob(u, c):        return await _handle_field(u, c)
-async def ask_tin(u, c):        return await _handle_field(u, c)
-async def ask_doc_number(u, c): return await _handle_field(u, c)
-async def ask_issued_by(u, c):  return await _handle_field(u, c)
-async def ask_issue_date(u, c): return await _handle_field(u, c)
-async def ask_address(u, c):    return await _handle_field(u, c)
-async def ask_iban(u, c):       return await _handle_field(u, c)
+async def ask_statement_date(u, c): return await _handle_field(u, c)
+async def ask_name(u, c):           return await _handle_field(u, c)
+async def ask_dob(u, c):            return await _handle_field(u, c)
+async def ask_tin(u, c):            return await _handle_field(u, c)
+async def ask_doc_number(u, c):     return await _handle_field(u, c)
+async def ask_issued_by(u, c):      return await _handle_field(u, c)
+async def ask_issue_date(u, c):     return await _handle_field(u, c)
+async def ask_address(u, c):        return await _handle_field(u, c)
+async def ask_iban(u, c):           return await _handle_field(u, c)
 
 
 async def _show_confirm(update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
@@ -1189,14 +1244,15 @@ def main():
         ]
 
     field_handlers = {
-        ASK_NAME:       _field_handlers(ask_name),
-        ASK_DOB:        _field_handlers(ask_dob),
-        ASK_TIN:        _field_handlers(ask_tin),
-        ASK_DOC_NUMBER: _field_handlers(ask_doc_number),
-        ASK_ISSUED_BY:  _field_handlers(ask_issued_by),
-        ASK_ISSUE_DATE: _field_handlers(ask_issue_date),
-        ASK_ADDRESS:    _field_handlers(ask_address),
-        ASK_IBAN:       _field_handlers(ask_iban),
+        ASK_STATEMENT_DATE: _field_handlers(ask_statement_date),
+        ASK_NAME:           _field_handlers(ask_name),
+        ASK_DOB:            _field_handlers(ask_dob),
+        ASK_TIN:            _field_handlers(ask_tin),
+        ASK_DOC_NUMBER:     _field_handlers(ask_doc_number),
+        ASK_ISSUED_BY:      _field_handlers(ask_issued_by),
+        ASK_ISSUE_DATE:     _field_handlers(ask_issue_date),
+        ASK_ADDRESS:        _field_handlers(ask_address),
+        ASK_IBAN:           _field_handlers(ask_iban),
     }
 
     conv = ConversationHandler(

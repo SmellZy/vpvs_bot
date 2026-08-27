@@ -82,7 +82,8 @@ else:
     CONFIRM,
     ASK_PROMO_INPUT,
     ASK_STATEMENT_DATE,
-) = range(15)
+    ASK_STATEMENT_DATE2,
+) = range(16)
 
 # ── Кнопки головного меню ───────────────────────────────────────────────────
 BTN_STATEMENT = "📄 Нова виписка"
@@ -114,19 +115,20 @@ BANK_FIELDS = {
         "page_w": 595.275,
         "personal_stream_indices": [],
         "fields": {
-            # Дата формування виписки (верхній правий куток)
-            "statement_date": (441,  800),
-            "name":           (59,   718),
-            "dob":            (87,   705),
-            "tin":            (49,   691),
-            "doc_number":     (221,  663),
-            "issued_by":      (76,   650),
-            "issue_date":     (90,   636),
-            "address":        (124,  623),
-            "iban":           (56,   582),
+            # "Cash flow on the card from [DATE]."  (top=88.4, bot=98.4)
+            # rl_y = 839.055 - 98.4 = 740.655
+            "statement_date": (159.9, 740.7),
+            "name":           (59,    718),
+            "dob":            (87,    705),
+            "tin":            (49,    691),
+            "doc_number":     (221,   663),
+            "issued_by":      (76,    650),
+            "issue_date":     (90,    636),
+            "address":        (124,   623),
+            "iban":           (56,    582),
         },
         "field_rects": {
-            "statement_date": (100, 12),
+            "statement_date": (52,  10),
             "name":           (250, 12),
             "dob":            (90,  12),
             "tin":            (90,  12),
@@ -136,46 +138,61 @@ BANK_FIELDS = {
             "address":        (445, 12),
             "iban":           (250, 12),
         },
+        # Підписи, специфічні для банку (якщо None — беремо з FIELD_DEFS)
+        "field_labels": {
+            "statement_date": "🗓 Дата виписки (ДД.ММ.РРРР):",
+        },
         "font_size": 9,
         "use_stream_clear": False,
-        # Конфіг номера виписки: None — банк не має номера
-        # format: рядок-шаблон, # = випадкова цифра, @ = літера
-        "statement_number": None,
+        # Список авто-генерованих номерів: [] — цього банку не треба
+        "statement_numbers": [],
     },
     "unex": {
         "page_h": 842.4,
         "page_w": 595.4,
         "personal_stream_indices": [],
         "fields": {
-            "statement_date": (441,  803),
-            "name":           (87.9,  707.8),
-            "dob":            (111.4, 697.0),
-            "tin":            (85.2,  686.2),
-            "doc_number":     (220.2, 658.6),
-            "issued_by":      (99.4,  647.8),
-            "issue_date":     (112.4, 637.0),
-            "address":        (138.1, 625.9),
-            "iban":           (88.8,  586.3),
+            # "Statement of card account №26202190258002 01.08.2026 - 23.08.2026"
+            # (top=95.3, bot=105.4) → rl_y = 842.4 - 105.4 = 737.0
+            # statement_date  = дата З (01.08.2026)  x0=251.4
+            # statement_date2 = дата ДО (23.08.2026) x0=304.0
+            "statement_date":  (251.4, 737.0),
+            "statement_date2": (304.0, 737.0),
+            "name":            (87.9,  707.8),
+            "dob":             (111.4, 697.0),
+            "tin":             (85.2,  686.2),
+            "doc_number":      (220.2, 658.6),
+            "issued_by":       (99.4,  647.8),
+            "issue_date":      (112.4, 637.0),
+            "address":         (138.1, 625.9),
+            "iban":            (88.8,  586.3),
         },
         "field_rects": {
-            "statement_date": (100, 10),
-            "name":           (250, 10),
-            "dob":            (80,  10),
-            "tin":            (80,  10),
-            "doc_number":     (80,  10),
-            "issued_by":      (60,  10),
-            "issue_date":     (80,  10),
-            "address":        (350, 10),
-            "iban":           (200, 10),
+            "statement_date":  (48,  11),
+            "statement_date2": (52,  11),
+            "name":            (250, 10),
+            "dob":             (80,  10),
+            "tin":             (80,  10),
+            "doc_number":      (80,  10),
+            "issued_by":       (60,  10),
+            "issue_date":      (80,  10),
+            "address":         (350, 10),
+            "iban":            (200, 10),
+        },
+        "field_labels": {
+            "statement_date":  "🗓 Дата виписки З (ДД.ММ.РРРР):",
+            "statement_date2": "🗓 Дата виписки ДО (ДД.ММ.РРРР):",
         },
         "font_size": 8.5,
         "use_stream_clear": False,
-        # UnexBank має номер виписки у форматі: UA##########
-        "statement_number": {
-            "x": 441, "y": 814,
-            "rect_w": 100, "rect_h": 10,
-            "format": "UA##########",   # 10 цифр після "UA"
-        },
+        # №26202190258002 — "№" + 14 цифр (x0=170.7, rl_y=737.0)
+        "statement_numbers": [
+            {
+                "x": 170.7, "y": 737.0,
+                "rect_w": 82, "rect_h": 11,
+                "format": "№##############",  # "№" + 14 цифр
+            },
+        ],
     },
     "privatbank": {
         "page_h": 841.880,
@@ -183,55 +200,80 @@ BANK_FIELDS = {
         "personal_stream_indices": [],
         "stream_ys": [652.28, 640.2, 628.13, 612.3, 600.22, 588.15, 576.08, 520.27],
         "fields": {
-            "statement_date": (441,  803),
-            "name":           (86.51,  652.28),
-            "dob":            (73.99,  640.20),
-            "tin":            (39.49,  628.13),
-            "doc_number":     (210.00, 612.30),
-            "issued_by":      (90.49,  600.22),
-            "issue_date":     (77.51,  588.15),
-            "address":        (107.51, 576.08),
-            "iban":           (45.98,  520.27),
+            # Рядок 1: "from 23.08.2026 21:40 № O7E17MODLROHRPOJ"
+            # (top=157.6, bot=165.1) → rl_y = 841.880 - 165.1 = 676.78
+            # statement_date покриває "23.08.2026 21:40" (до №, x0=39.6..~105)
+            "statement_date":  (39.6,  676.78),
+            # Рядок 2: "SAMDNWFC00028959794 from 05.09.2016"
+            # (top=325.8, bot=334.8) → rl_y = 841.880 - 334.8 = 507.08
+            # statement_date2 покриває дату відкриття рахунку "05.09.2016"
+            "statement_date2": (270.0, 507.08),
+            "name":            (86.51,  652.28),
+            "dob":             (73.99,  640.20),
+            "tin":             (39.49,  628.13),
+            "doc_number":      (210.00, 612.30),
+            "issued_by":       (90.49,  600.22),
+            "issue_date":      (77.51,  588.15),
+            "address":         (107.51, 576.08),
+            "iban":            (45.98,  520.27),
         },
         "field_rects": {
-            "statement_date": (100, 11),
-            "name":           (200, 11),
-            "dob":            (60,  11),
-            "tin":            (65,  11),
-            "doc_number":     (310, 11),
-            "issued_by":      (40,  11),
-            "issue_date":     (60,  11),
-            "address":        (430, 11),
-            "iban":           (165, 11),
+            # від x=39.6 до перед "№" (x≈105) = 65pt
+            "statement_date":  (66,  9),
+            # "05.09.2016" ширина ~50pt
+            "statement_date2": (52,  9),
+            "name":            (200, 11),
+            "dob":             (60,  11),
+            "tin":             (65,  11),
+            "doc_number":      (310, 11),
+            "issued_by":       (40,  11),
+            "issue_date":      (60,  11),
+            "address":         (430, 11),
+            "iban":            (165, 11),
+        },
+        "field_labels": {
+            "statement_date":  "🗓 Дата виписки (ДД.ММ.РРРР ГГ:ХХ), напр. 23.08.2026 21:40:",
+            "statement_date2": "📅 Дата відкриття рахунку (ДД.ММ.РРРР):",
         },
         "font_size": 9.0,
         "use_stream_clear": False,
         "use_stream_tj_remove": True,
-        # PrivatBank: номер виписки у форматі: ############## (14 цифр)
-        "statement_number": {
-            "x": 441, "y": 814,
-            "rect_w": 110, "rect_h": 11,
-            "format": "##############",  # 14 цифр
-        },
+        # Два авто-номери:
+        # 1) O7E17MODLROHRPOJ — 16 символів: @#@##@@@@@@@@@@@
+        # 2) SAMDNWFC00028959794 — 19 символів: @@@@@@@@###########
+        "statement_numbers": [
+            {
+                "x": 115.2, "y": 676.78,
+                "rect_w": 94, "rect_h": 9,
+                "format": "@#@##@@@@@@@@@@@",   # 16 chars: @=літера, #=цифра
+            },
+            {
+                "x": 139.0, "y": 507.08,
+                "rect_w": 113, "rect_h": 9,
+                "format": "@@@@@@@@###########",  # 8 літери + 11 цифр
+            },
+        ],
     },
 }
 
 FIELD_DEFS = [
-    ("statement_date", "🗓 Дата виписки (ДД.ММ.РРРР):",    "27.08.2025"),
-    ("name",           "👤 ПІБ (латиницею):",               "KOVALENKO PETRO"),
-    ("dob",            "🎂 Дата народження (ДД.ММ.РРРР):",  "15.03.1990"),
-    ("tin",            "🔢 ІПН (10 цифр):",                 "1234567890"),
-    ("doc_number",     "📄 Серія/номер документа:",          "987654"),
-    ("issued_by",      "🏛️ Ким виданий (код):",              "1234"),
-    ("issue_date",     "📅 Дата видачі (ДД.ММ.РРРР):",      "01.01.2020"),
-    ("address",        "🏠 Адреса реєстрації:",
-                       "Ukraine, city Lviv, street Franka, build 5, 79000"),
-    ("iban",           "🏦 IBAN:",                           "UA123456789012345678901234567"),
+    # Дати виписки — банко-специфічні підписи беруться з BANK_FIELDS["field_labels"]
+    ("statement_date",  "🗓 Дата виписки (ДД.ММ.РРРР):",          "27.08.2025"),
+    ("statement_date2", "🗓 Кінцева дата / Дата відкриття рахунку (ДД.ММ.РРРР):", "27.08.2025"),
+    ("name",            "👤 ПІБ (латиницею):",                     "KOVALENKO PETRO"),
+    ("dob",             "🎂 Дата народження (ДД.ММ.РРРР):",        "15.03.1990"),
+    ("tin",             "🔢 ІПН (10 цифр):",                       "1234567890"),
+    ("doc_number",      "📄 Серія/номер документа:",                "987654"),
+    ("issued_by",       "🏛️ Ким виданий (код):",                   "1234"),
+    ("issue_date",      "📅 Дата видачі (ДД.ММ.РРРР):",            "01.01.2020"),
+    ("address",         "🏠 Адреса реєстрації:",
+                        "Ukraine, city Lviv, street Franka, build 5, 79000"),
+    ("iban",            "🏦 IBAN:",                                 "UA123456789012345678901234567"),
 ]
 
 FIELD_KEYS   = [f[0] for f in FIELD_DEFS]
 FIELD_STATES = [
-    ASK_STATEMENT_DATE,
+    ASK_STATEMENT_DATE, ASK_STATEMENT_DATE2,
     ASK_NAME, ASK_DOB, ASK_TIN, ASK_DOC_NUMBER,
     ASK_ISSUED_BY, ASK_ISSUE_DATE, ASK_ADDRESS, ASK_IBAN,
 ]
@@ -612,12 +654,11 @@ def edit_pdf(pdf_bytes: bytes, bank: str, fields: dict) -> bytes:
             c.setFont(PDF_FONT_REG, font_size)
             c.drawString(x, y, value)
 
-    # Авто-генерація унікального номера виписки (якщо банк підтримує)
-    stmt_num_cfg = cfg.get("statement_number")
-    if stmt_num_cfg:
-        nx, ny      = stmt_num_cfg["x"], stmt_num_cfg["y"]
-        nw, nh      = stmt_num_cfg["rect_w"], stmt_num_cfg["rect_h"]
-        num_text    = _generate_statement_number(stmt_num_cfg["format"])
+    # Авто-генерація унікальних номерів виписки (якщо банк підтримує)
+    for stmt_num_cfg in cfg.get("statement_numbers", []):
+        nx, ny   = stmt_num_cfg["x"], stmt_num_cfg["y"]
+        nw, nh   = stmt_num_cfg["rect_w"], stmt_num_cfg["rect_h"]
+        num_text = _generate_statement_number(stmt_num_cfg["format"])
         c.setFillColorRGB(1, 1, 1)
         c.rect(nx, ny - 2, nw, nh + 2, fill=1, stroke=0)
         c.setFillColorRGB(0, 0, 0)
@@ -664,10 +705,27 @@ def detect_bank(pdf_bytes: bytes) -> str | None:
     return None
 
 
-def _ask_field_text(idx: int) -> str:
-    key, question, example = FIELD_DEFS[idx]
-    step  = idx + 1
-    total = len(FIELD_DEFS)
+def _relevant_field_indices(bank: str) -> list[int]:
+    """Повертає список індексів FIELD_DEFS, які є у цього банку."""
+    bank_fields = BANK_FIELDS.get(bank, {}).get("fields", {})
+    return [i for i, (key, _, __) in enumerate(FIELD_DEFS) if key in bank_fields]
+
+
+def _ask_field_text(idx: int, bank: str | None = None) -> str:
+    key, default_question, example = FIELD_DEFS[idx]
+    # Банко-специфічний підпис (якщо визначено)
+    if bank:
+        question = BANK_FIELDS.get(bank, {}).get("field_labels", {}).get(key, default_question)
+    else:
+        question = default_question
+    # Нумерація показує тільки релевантні кроки
+    if bank:
+        relevant = _relevant_field_indices(bank)
+        step  = relevant.index(idx) + 1 if idx in relevant else idx + 1
+        total = len(relevant)
+    else:
+        step  = idx + 1
+        total = len(FIELD_DEFS)
     return (
         f"[{step}/{total}] {question}\n"
         f"_Приклад: {example}_\n\n"
@@ -878,13 +936,15 @@ async def cb_bank(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
         return ConversationHandler.END
 
     ctx.user_data["pdf_bytes"]  = tpl_path.read_bytes()
-    ctx.user_data["field_idx"]  = 0
     ctx.user_data["fields"]     = {}
+    # Починаємо з першого релевантного поля для цього банку
+    first_idx = _relevant_field_indices(bank)[0] if _relevant_field_indices(bank) else 0
+    ctx.user_data["field_idx"]  = first_idx
     await q.edit_message_text(
         f"✅ Шаблон {BANK_TEMPLATES[bank]['emoji']} {BANK_TEMPLATES[bank]['name']} вибрано.\n\n"
-        + _ask_field_text(0)
+        + _ask_field_text(first_idx, bank)
     )
-    return FIELD_STATES[0]
+    return FIELD_STATES[first_idx]
 
 
 async def receive_pdf(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
@@ -911,15 +971,17 @@ async def receive_pdf(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
     ctx.user_data["pdf_bytes"] = pdf_bytes
     ctx.user_data["bank"]      = bank
     ctx.user_data["fields"]    = {}
-    ctx.user_data["field_idx"] = 0
 
     bank_name = BANK_TEMPLATES.get(bank, {}).get("name", "Невідомий") if bank else "❓"
     if bank:
+        first_idx = _relevant_field_indices(bank)[0] if _relevant_field_indices(bank) else 0
+        ctx.user_data["field_idx"] = first_idx
         await update.message.reply_text(
-            f"✅ PDF отримано. Визначено банк: *{bank_name}*\n\n" + _ask_field_text(0),
+            f"✅ PDF отримано. Визначено банк: *{bank_name}*\n\n"
+            + _ask_field_text(first_idx, bank),
             parse_mode="Markdown",
         )
-        return FIELD_STATES[0]
+        return FIELD_STATES[first_idx]
     else:
         kb = [
             [InlineKeyboardButton("🟡 Monobank",   callback_data="detect_monobank")],
@@ -937,33 +999,43 @@ async def cb_detect_bank(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
     q    = update.callback_query
     await q.answer()
     bank = q.data.split("_", 1)[1]
-    ctx.user_data["bank"]      = bank
-    ctx.user_data["fields"]    = {}
-    ctx.user_data["field_idx"] = 0
-    await q.edit_message_text(_ask_field_text(0))
-    return FIELD_STATES[0]
+    ctx.user_data["bank"]   = bank
+    ctx.user_data["fields"] = {}
+    first_idx = _relevant_field_indices(bank)[0] if _relevant_field_indices(bank) else 0
+    ctx.user_data["field_idx"] = first_idx
+    await q.edit_message_text(_ask_field_text(first_idx, bank))
+    return FIELD_STATES[first_idx]
 
 
 async def _handle_field(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
     text = update.message.text.strip()
     idx  = ctx.user_data.get("field_idx", 0)
+    bank = ctx.user_data.get("bank", "monobank")
     key  = FIELD_KEYS[idx]
 
     if text != "/skip":
         ctx.user_data.setdefault("fields", {})[key] = text
 
+    # Знаходимо наступний РЕЛЕВАНТНИЙ для цього банку індекс
+    bank_fields = BANK_FIELDS.get(bank, {}).get("fields", {})
     next_idx = idx + 1
+    while next_idx < len(FIELD_KEYS) and FIELD_KEYS[next_idx] not in bank_fields:
+        next_idx += 1
+
     ctx.user_data["field_idx"] = next_idx
 
     if next_idx >= len(FIELD_DEFS):
         return await _show_confirm(update, ctx)
 
-    await update.message.reply_text(_ask_field_text(next_idx), parse_mode="Markdown")
+    await update.message.reply_text(
+        _ask_field_text(next_idx, bank), parse_mode="Markdown"
+    )
     return FIELD_STATES[next_idx]
 
 
-async def ask_statement_date(u, c): return await _handle_field(u, c)
-async def ask_name(u, c):           return await _handle_field(u, c)
+async def ask_statement_date(u, c):  return await _handle_field(u, c)
+async def ask_statement_date2(u, c): return await _handle_field(u, c)
+async def ask_name(u, c):            return await _handle_field(u, c)
 async def ask_dob(u, c):            return await _handle_field(u, c)
 async def ask_tin(u, c):            return await _handle_field(u, c)
 async def ask_doc_number(u, c):     return await _handle_field(u, c)
@@ -978,8 +1050,15 @@ async def _show_confirm(update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
     bank      = ctx.user_data.get("bank", "?")
     bank_name = BANK_TEMPLATES.get(bank, {}).get("name", bank)
 
+    bank_cfg    = BANK_FIELDS.get(bank, {})
+    bank_labels = bank_cfg.get("field_labels", {})
+    bank_fields = bank_cfg.get("fields", {})
+
     lines = [f"📋 Перевір дані для {bank_name}:\n"]
-    for key, question, _ in FIELD_DEFS:
+    for key, default_q, _ in FIELD_DEFS:
+        if key not in bank_fields:
+            continue  # Поле не підтримується цим банком
+        question = bank_labels.get(key, default_q)
         val = fields.get(key) or "— не змінено —"
         lines.append(f"• {question.rstrip(':')}: {val}")
     lines.append("\n/confirm — застосувати\n/restart — почати спочатку")
@@ -1244,8 +1323,9 @@ def main():
         ]
 
     field_handlers = {
-        ASK_STATEMENT_DATE: _field_handlers(ask_statement_date),
-        ASK_NAME:           _field_handlers(ask_name),
+        ASK_STATEMENT_DATE:  _field_handlers(ask_statement_date),
+        ASK_STATEMENT_DATE2: _field_handlers(ask_statement_date2),
+        ASK_NAME:            _field_handlers(ask_name),
         ASK_DOB:            _field_handlers(ask_dob),
         ASK_TIN:            _field_handlers(ask_tin),
         ASK_DOC_NUMBER:     _field_handlers(ask_doc_number),

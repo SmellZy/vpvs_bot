@@ -8,6 +8,8 @@ from pathlib import Path
 from datetime import datetime, date
 from contextlib import contextmanager
 
+import httpx
+
 import pikepdf
 from reportlab.pdfgen import canvas
 from reportlab.pdfbase import pdfmetrics
@@ -28,9 +30,16 @@ log = logging.getLogger(__name__)
 BOT_TOKEN = os.getenv("BOT_TOKEN", "YOUR_BOT_TOKEN_HERE")
 
 # ── Конфіг ─────────────────────────────────────────────────────────────────
-# Канали для обов'язкової підписки.
-# Формат env: "channel_id|Назва|https://t.me/...;channel_id2|Назва2|url2"
-# Приклад: "@mychannel|Мій канал|https://t.me/mychannel;-1001234567890|Приватний|https://t.me/+xxx"
+# Middleware-сервіс перевірки підписки.
+# MIDDLEWARE_URL  — URL сервісу, напр. https://middleware.up.railway.app
+# MIDDLEWARE_SECRET — спільний секрет (Bearer-токен)
+# Якщо MIDDLEWARE_URL не задано — перевірка підписки вимкнена (дозволяє всіх).
+MIDDLEWARE_URL    = os.getenv("MIDDLEWARE_URL", "").rstrip("/")
+MIDDLEWARE_SECRET = os.getenv("MIDDLEWARE_SECRET", "")
+
+# REQUIRED_CHANNELS залишаємо лише для fallback-відображення кнопок підписки.
+# Реальну перевірку робить middleware зі своїм токеном.
+# Формат: "channel_id|Назва|https://t.me/...;..."
 _CHANNELS_RAW = os.getenv("REQUIRED_CHANNELS", "")
 REQUIRED_CHANNELS: list[tuple[str, str, str]] = []
 for _entry in _CHANNELS_RAW.split(";"):
@@ -536,19 +545,40 @@ def db_list_users(limit: int = 20) -> list:
 # ── Subscription gate ───────────────────────────────────────────────────────
 
 async def get_unsubscribed_channels(bot, user_id: int) -> list[dict]:
-    """Returns list of channels the user is NOT subscribed to."""
-    if not REQUIRED_CHANNELS:
+    """
+    Повертає список каналів, на які користувач НЕ підписаний.
+    Перевірка відбувається через middleware-сервіс (окремий бот-токен).
+    Якщо MIDDLEWARE_URL не задано — повертає порожній список (всі дозволені).
+    """
+    if not MIDDLEWARE_URL:
+        # Middleware не налаштовано — перевірку вимкнено
+        if REQUIRED_CHANNELS:
+            log.warning("MIDDLEWARE_URL not set — subscription check disabled!")
         return []
-    not_subbed = []
-    for ch_id, ch_name, ch_url in REQUIRED_CHANNELS:
-        try:
-            member = await bot.get_chat_member(ch_id, user_id)
-            if member.status in ("left", "kicked", "banned"):
-                not_subbed.append({"id": ch_id, "name": ch_name, "url": ch_url})
-        except Exception as e:
-            log.warning("Can't check subscription for %s: %s", ch_id, e)
-            not_subbed.append({"id": ch_id, "name": ch_name, "url": ch_url})
-    return not_subbed
+
+    headers = {}
+    if MIDDLEWARE_SECRET:
+        headers["Authorization"] = f"Bearer {MIDDLEWARE_SECRET}"
+
+    try:
+        async with httpx.AsyncClient(timeout=8) as client:
+            resp = await client.get(
+                f"{MIDDLEWARE_URL}/check",
+                params={"user_id": user_id},
+                headers=headers,
+            )
+        data = resp.json()
+        if resp.status_code == 200 and data.get("ok"):
+            return []  # Підписаний на всі
+        if resp.status_code == 200 and not data.get("ok"):
+            return data.get("channels", [])  # Список незапідписаних каналів
+        # Неочікуваний статус — логуємо та пропускаємо (fail-open)
+        log.error("Middleware unexpected response %d: %s", resp.status_code, data)
+        return []
+    except Exception as e:
+        # Middleware недоступний — fail-open (пропускаємо, не блокуємо юзера)
+        log.error("Middleware unavailable for user %d: %s", user_id, e)
+        return []
 
 
 async def _send_subscription_gate(message, not_subbed: list[dict]):

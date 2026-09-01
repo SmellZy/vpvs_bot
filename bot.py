@@ -137,7 +137,7 @@ BANK_FIELDS = {
             "iban":           (56,    582),
         },
         "field_rects": {
-            "statement_date": (52,  10),
+            "statement_date": (62,  12),
             "name":           (250, 12),
             "dob":            (90,  12),
             "tin":            (90,  12),
@@ -705,7 +705,7 @@ def edit_pdf(pdf_bytes: bytes, bank: str, fields: dict) -> bytes:
     writer = PdfWriter()
     for i, pg in enumerate(base_reader.pages):
         if i == 0:
-            pg.merge_page(overlay_reader.pages[0])
+            pg.merge_page(overlay_reader.pages[0], over=True)
         writer.add_page(pg)
 
     writer.add_metadata({

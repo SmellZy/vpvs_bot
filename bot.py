@@ -126,7 +126,7 @@ BANK_FIELDS = {
         "fields": {
             # "Cash flow on the card from [DATE]."  (top=88.4, bot=98.4)
             # rl_y = 839.055 - 98.4 = 740.655
-            "statement_date": (159.9, 742.7),
+            "statement_date": (159.9, 743.7),
             "name":           (59,    718),
             "dob":            (87,    705),
             "tin":            (49,    691),

@@ -277,9 +277,9 @@ BANK_FIELDS = {
             "statement_date":  (449.3, 371.82),
             # Statement period "to": "06/07/2026"   same row
             "statement_date2": (495.4, 371.82),
-            # Generation date "6 July 2026 at 12:39 (UTC)."  top=128.2, bot=136.0
-            # rl_y = 595.92 - 136.0 = 459.92  (x0=432.8, width=132.7pt)
-            "gen_date":        (432.8, 459.92),
+            # Generation date "6 July 2026 at 12:39 (UTC)."  top=128.2, bot=138.8
+            # rl_y = 595.92 - 138.8 = 457.12  (x0=432.8, width=132.7pt)
+            "gen_date":        (432.8, 457.12),
             # Customer name "Dmytro Oleksyuk"  top=36.0, bot=44.2
             # rl_y = 595.92 - 44.2 = 551.72  right edge at x=818.5
             "name":            (751.6, 551.72),
@@ -303,6 +303,18 @@ BANK_FIELDS = {
         "field_right_x": {
             "name":    818.5,
             "address": 725.8,
+        },
+        # per-field font sizes (extracted via pdfplumber)
+        "field_font_sizes": {
+            "statement_date":  7.21,
+            "statement_date2": 7.21,
+            "gen_date":        10.57,
+            "name":            8.17,
+            "address":         8.17,
+        },
+        # gen_date uses gray color (0.455, 0.475, 0.502) — matches Poppins Light gray in template
+        "field_colors": {
+            "gen_date": (0.45490197, 0.4745098, 0.5019608),
         },
         # per-page field visibility (0-indexed):
         # name/address appear on all 3 pages; gen_date on pages 1&2; period dates only on page 1
@@ -717,15 +729,19 @@ def edit_pdf(pdf_bytes: bytes, bank: str, fields: dict) -> bytes:
     pdf.save(buf)
     buf.seek(0)
 
-    field_positions = cfg["fields"]
-    field_rects     = cfg.get("field_rects", {})
-    field_right_x   = cfg.get("field_right_x", {})
-    field_pages     = cfg.get("field_pages", None)
-    font_size       = cfg["font_size"]
+    field_positions  = cfg["fields"]
+    field_rects      = cfg.get("field_rects", {})
+    field_right_x    = cfg.get("field_right_x", {})
+    field_pages      = cfg.get("field_pages", None)
+    field_font_sizes = cfg.get("field_font_sizes", {})
+    field_colors     = cfg.get("field_colors", {})
+    font_size        = cfg["font_size"]
 
     def _draw_field_overlay(c, key, x, y):
         """Draw white rect + new value for one field on canvas c."""
-        rx = field_right_x.get(key)
+        rx   = field_right_x.get(key)
+        fz   = field_font_sizes.get(key, font_size)
+        fclr = field_colors.get(key, (0, 0, 0))
         if key in field_rects:
             w_r, h_r = field_rects[key]
             c.setFillColorRGB(1, 1, 1)
@@ -735,8 +751,8 @@ def edit_pdf(pdf_bytes: bytes, bank: str, fields: dict) -> bytes:
                 c.rect(x, y - 2, w_r, h_r + 2, fill=1, stroke=0)
         value = fields.get(key, "")
         if value:
-            c.setFillColorRGB(0, 0, 0)
-            c.setFont(PDF_FONT_REG, font_size)
+            c.setFillColorRGB(*fclr)
+            c.setFont(PDF_FONT_REG, fz)
             if rx is not None:
                 c.drawRightString(rx, y, value)
             else:

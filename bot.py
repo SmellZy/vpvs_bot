@@ -108,7 +108,7 @@ MAIN_KB = ReplyKeyboardMarkup(
 )
 
 # ── Шаблони банків ──────────────────────────────────────────────────────────
-TEMPLATE_DIR = Path("/app/templates")
+TEMPLATE_DIR = Path(os.getenv("TEMPLATE_DIR", Path(__file__).parent / "templates"))
 TEMPLATE_DIR.mkdir(exist_ok=True)
 
 BANK_TEMPLATES = {

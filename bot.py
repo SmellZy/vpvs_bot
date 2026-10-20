@@ -115,6 +115,7 @@ BANK_TEMPLATES = {
     "monobank":   {"name": "Monobank",   "emoji": "🟡", "file": "monobank.pdf"},
     "unex":       {"name": "UnexBank",   "emoji": "🔵", "file": "unex.pdf"},
     "privatbank": {"name": "PrivatBank", "emoji": "🟢", "file": "privatbank.pdf"},
+    "paynetics":  {"name": "Paynetics",  "emoji": "🟣", "file": "paynetics.pdf"},
 }
 
 # ── Конфіг полів для кожного банку ─────────────────────────────────────────
@@ -262,6 +263,34 @@ BANK_FIELDS = {
                 "format": "@@@@@@@@###########",  # 8 літери + 11 цифр
             },
         ],
+    },
+    "paynetics": {
+        # A4 landscape  (page_w=842.88, page_h=595.92)
+        # pdfplumber coords → rl_y = page_h - pdfplumber_bot
+        "page_h": 595.920,
+        "page_w": 842.880,
+        "personal_stream_indices": [],
+        "fields": {
+            # Statement period "from": "01/07/2026"  top=216.9, bot=224.1
+            # rl_y = 595.92 - 224.1 = 371.82
+            "statement_date":  (449.3, 371.82),
+            # Statement period "to": "06/07/2026"   same row
+            "statement_date2": (495.4, 371.82),
+            # Customer name "Dmytro Oleksyuk"  top=36.0, bot=44.2
+            # rl_y = 595.92 - 44.2 = 551.72
+            "name":            (751.6, 551.72),
+        },
+        "field_rects": {
+            "statement_date":  (44, 9),   # "01/07/2026" is 38.4pt wide
+            "statement_date2": (46, 9),   # "06/07/2026" is 40.8pt wide
+            "name":            (72, 10),  # "Dmytro Oleksyuk" is 66.9pt wide
+        },
+        "field_labels": {
+            "statement_date":  "🗓 Дата виписки 'від' (ДД/ММ/РРРР, напр. 01/07/2026):",
+            "statement_date2": "🗓 Дата виписки 'до' (ДД/ММ/РРРР, напр. 06/07/2026):",
+        },
+        "font_size": 7.0,
+        "statement_numbers": [],
     },
 }
 
@@ -730,6 +759,8 @@ def detect_bank(pdf_bytes: bytes) -> str | None:
             return "unex"
         if "privatbank" in text or "приватбанк" in text or "privat24" in text:
             return "privatbank"
+        if "paynetics" in text or "trading 212" in text or "t212" in text:
+            return "paynetics"
     except Exception:
         pass
     return None
@@ -946,6 +977,7 @@ async def cb_mode(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
             [InlineKeyboardButton("🟡 Monobank",   callback_data="bank_monobank")],
             [InlineKeyboardButton("🔵 UnexBank",   callback_data="bank_unex")],
             [InlineKeyboardButton("🟢 PrivatBank", callback_data="bank_privatbank")],
+            [InlineKeyboardButton("🟣 Paynetics",  callback_data="bank_paynetics")],
         ]
         await q.edit_message_text("🏦 Вибери банк:", reply_markup=InlineKeyboardMarkup(kb))
         return CHOOSE_BANK
@@ -1017,6 +1049,7 @@ async def receive_pdf(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
             [InlineKeyboardButton("🟡 Monobank",   callback_data="detect_monobank")],
             [InlineKeyboardButton("🔵 UnexBank",   callback_data="detect_unex")],
             [InlineKeyboardButton("🟢 PrivatBank", callback_data="detect_privatbank")],
+            [InlineKeyboardButton("🟣 Paynetics",  callback_data="detect_paynetics")],
         ]
         await update.message.reply_text(
             "🤔 Не вдалося визначити банк. Вибери вручну:",

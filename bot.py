@@ -279,11 +279,14 @@ BANK_FIELDS = {
             # Customer name "Dmytro Oleksyuk"  top=36.0, bot=44.2
             # rl_y = 595.92 - 44.2 = 551.72
             "name":            (751.6, 551.72),
+            # Address "102 Kurfürstendamm, Berlin 10711, DE"  top=36.0, bot=44.2
+            "address":         (585.0, 551.72),
         },
         "field_rects": {
             "statement_date":  (44, 9),   # "01/07/2026" is 38.4pt wide
             "statement_date2": (46, 9),   # "06/07/2026" is 40.8pt wide
-            "name":            (72, 10),  # "Dmytro Oleksyuk" is 66.9pt wide
+            "name":            (72, 10),   # "Dmytro Oleksyuk" is 66.9pt wide
+            "address":         (146, 10),  # "102 Kurfürstendamm, Berlin 10711, DE" is 140.8pt wide
         },
         "field_labels": {
             "statement_date":  "🗓 Дата виписки 'від' (ДД/ММ/РРРР, напр. 01/07/2026):",

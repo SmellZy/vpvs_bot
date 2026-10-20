@@ -290,6 +290,7 @@ BANK_FIELDS = {
             "statement_date2": "🗓 Дата виписки 'до' (ДД/ММ/РРРР, напр. 06/07/2026):",
         },
         "font_size": 7.0,
+        "use_stream_clear": False,
         "statement_numbers": [],
     },
 }

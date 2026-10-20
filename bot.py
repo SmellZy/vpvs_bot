@@ -92,7 +92,8 @@ else:
     ASK_PROMO_INPUT,
     ASK_STATEMENT_DATE,
     ASK_STATEMENT_DATE2,
-) = range(16)
+    ASK_GEN_DATE,
+) = range(17)
 
 # ── Кнопки головного меню ───────────────────────────────────────────────────
 BTN_STATEMENT = "📄 Нова виписка"
@@ -276,21 +277,41 @@ BANK_FIELDS = {
             "statement_date":  (449.3, 371.82),
             # Statement period "to": "06/07/2026"   same row
             "statement_date2": (495.4, 371.82),
+            # Generation date "6 July 2026 at 12:39 (UTC)."  top=128.2, bot=136.0
+            # rl_y = 595.92 - 136.0 = 459.92  (x0=432.8, width=132.7pt)
+            "gen_date":        (432.8, 459.92),
             # Customer name "Dmytro Oleksyuk"  top=36.0, bot=44.2
-            # rl_y = 595.92 - 44.2 = 551.72
+            # rl_y = 595.92 - 44.2 = 551.72  right edge at x=818.5
             "name":            (751.6, 551.72),
-            # Address "102 Kurfürstendamm, Berlin 10711, DE"  top=36.0, bot=44.2
+            # Address "102 Kurfürstendamm, Berlin 10711, DE"  same row
+            # right edge at x=725.8
             "address":         (585.0, 551.72),
         },
         "field_rects": {
-            "statement_date":  (44, 9),   # "01/07/2026" is 38.4pt wide
-            "statement_date2": (46, 9),   # "06/07/2026" is 40.8pt wide
+            "statement_date":  (44, 9),    # "01/07/2026" is 38.4pt wide
+            "statement_date2": (46, 9),    # "06/07/2026" is 40.8pt wide
+            "gen_date":        (138, 11),  # "6 July 2026 at 12:39 (UTC)." is ~132.7pt wide
             "name":            (72, 10),   # "Dmytro Oleksyuk" is 66.9pt wide
             "address":         (146, 10),  # "102 Kurfürstendamm, Berlin 10711, DE" is 140.8pt wide
         },
         "field_labels": {
             "statement_date":  "🗓 Дата виписки 'від' (ДД/ММ/РРРР, напр. 01/07/2026):",
             "statement_date2": "🗓 Дата виписки 'до' (ДД/ММ/РРРР, напр. 06/07/2026):",
+            "gen_date":        "🗓 Дата генерації (напр. '6 July 2026 at 12:39 (UTC).'):",
+        },
+        # name/address are right-aligned in the original PDF
+        "field_right_x": {
+            "name":    818.5,
+            "address": 725.8,
+        },
+        # per-page field visibility (0-indexed):
+        # name/address appear on all 3 pages; gen_date on pages 1&2; period dates only on page 1
+        "field_pages": {
+            "statement_date":  [0],
+            "statement_date2": [0],
+            "gen_date":        [0, 1],
+            "name":            [0, 1, 2],
+            "address":         [0, 1, 2],
         },
         "font_size": 7.0,
         "use_stream_clear": False,
@@ -311,6 +332,7 @@ FIELD_DEFS = [
     ("address",         "🏠 Адреса реєстрації:",
                         "Ukraine, city Lviv, street Franka, build 5, 79000"),
     ("iban",            "🏦 IBAN:",                                 "UA123456789012345678901234567"),
+    ("gen_date",        "🗓 Дата та час генерації:",               "6 July 2026 at 12:39 (UTC)."),
 ]
 
 FIELD_KEYS   = [f[0] for f in FIELD_DEFS]
@@ -318,6 +340,7 @@ FIELD_STATES = [
     ASK_STATEMENT_DATE, ASK_STATEMENT_DATE2,
     ASK_NAME, ASK_DOB, ASK_TIN, ASK_DOC_NUMBER,
     ASK_ISSUED_BY, ASK_ISSUE_DATE, ASK_ADDRESS, ASK_IBAN,
+    ASK_GEN_DATE,
 ]
 
 _MENU_FILTER = filters.Regex(
@@ -696,50 +719,78 @@ def edit_pdf(pdf_bytes: bytes, bank: str, fields: dict) -> bytes:
 
     field_positions = cfg["fields"]
     field_rects     = cfg.get("field_rects", {})
+    field_right_x   = cfg.get("field_right_x", {})
+    field_pages     = cfg.get("field_pages", None)
     font_size       = cfg["font_size"]
 
-    # Overlay: завжди малюємо білі прямокутники щоб закрити оригінальний текст.
-    # Поверх білого прямокутника малюємо нове значення (якщо користувач ввів).
-    overlay_buf = io.BytesIO()
-    c = canvas.Canvas(overlay_buf, pagesize=(PAGE_W, PAGE_H))
-
-    for key, (x, y) in field_positions.items():
-        # Білий прямокутник — завжди, щоб перекрити чужі дані
+    def _draw_field_overlay(c, key, x, y):
+        """Draw white rect + new value for one field on canvas c."""
+        rx = field_right_x.get(key)
         if key in field_rects:
             w_r, h_r = field_rects[key]
             c.setFillColorRGB(1, 1, 1)
-            c.rect(x, y - 2, w_r, h_r + 2, fill=1, stroke=0)
-
-        # Новий текст — тільки якщо користувач щось ввів
+            if rx is not None:
+                c.rect(rx - w_r, y - 2, w_r, h_r + 2, fill=1, stroke=0)
+            else:
+                c.rect(x, y - 2, w_r, h_r + 2, fill=1, stroke=0)
         value = fields.get(key, "")
         if value:
             c.setFillColorRGB(0, 0, 0)
             c.setFont(PDF_FONT_REG, font_size)
-            c.drawString(x, y, value)
+            if rx is not None:
+                c.drawRightString(rx, y, value)
+            else:
+                c.drawString(x, y, value)
 
-    # Авто-генерація унікальних номерів виписки (якщо банк підтримує)
-    for stmt_num_cfg in cfg.get("statement_numbers", []):
-        nx, ny   = stmt_num_cfg["x"], stmt_num_cfg["y"]
-        nw, nh   = stmt_num_cfg["rect_w"], stmt_num_cfg["rect_h"]
-        num_text = _generate_statement_number(stmt_num_cfg["format"])
-        c.setFillColorRGB(1, 1, 1)
-        c.rect(nx, ny - 2, nw, nh + 2, fill=1, stroke=0)
-        c.setFillColorRGB(0, 0, 0)
-        c.setFont(PDF_FONT_REG, font_size)
-        c.drawString(nx, ny, num_text)
-        log.info("Generated statement number for %s: %s", bank, num_text)
+    base_reader = PdfReader(buf)
+    writer      = PdfWriter()
 
-    c.save()
-    overlay_buf.seek(0)
+    if field_pages is None:
+        # Single-page overlay mode (all other banks): build one overlay, apply to page 0 only
+        overlay_buf = io.BytesIO()
+        c = canvas.Canvas(overlay_buf, pagesize=(PAGE_W, PAGE_H))
 
-    base_reader    = PdfReader(buf)
-    overlay_reader = PdfReader(overlay_buf)
+        for key, (x, y) in field_positions.items():
+            _draw_field_overlay(c, key, x, y)
 
-    writer = PdfWriter()
-    for i, pg in enumerate(base_reader.pages):
-        if i == 0:
-            pg.merge_page(overlay_reader.pages[0], over=True)
-        writer.add_page(pg)
+        for stmt_num_cfg in cfg.get("statement_numbers", []):
+            nx, ny   = stmt_num_cfg["x"], stmt_num_cfg["y"]
+            nw, nh   = stmt_num_cfg["rect_w"], stmt_num_cfg["rect_h"]
+            num_text = _generate_statement_number(stmt_num_cfg["format"])
+            c.setFillColorRGB(1, 1, 1)
+            c.rect(nx, ny - 2, nw, nh + 2, fill=1, stroke=0)
+            c.setFillColorRGB(0, 0, 0)
+            c.setFont(PDF_FONT_REG, font_size)
+            c.drawString(nx, ny, num_text)
+            log.info("Generated statement number for %s: %s", bank, num_text)
+
+        c.save()
+        overlay_buf.seek(0)
+        overlay_reader = PdfReader(overlay_buf)
+
+        for i, pg in enumerate(base_reader.pages):
+            if i == 0:
+                pg.merge_page(overlay_reader.pages[0], over=True)
+            writer.add_page(pg)
+
+    else:
+        # Multi-page overlay mode: per-page overlays (Paynetics)
+        page_count = len(base_reader.pages)
+        for i in range(page_count):
+            pg = base_reader.pages[i]
+            page_fields = {
+                key: pos for key, pos in field_positions.items()
+                if i in field_pages.get(key, [0])
+            }
+            if page_fields:
+                ov_buf = io.BytesIO()
+                c = canvas.Canvas(ov_buf, pagesize=(PAGE_W, PAGE_H))
+                for key, (x, y) in page_fields.items():
+                    _draw_field_overlay(c, key, x, y)
+                c.save()
+                ov_buf.seek(0)
+                pg.merge_page(PdfReader(ov_buf).pages[0], over=True)
+            writer.add_page(pg)
 
     writer.add_metadata({
         "/Producer": "", "/Creator": "", "/Author": "",
@@ -1110,6 +1161,7 @@ async def ask_issued_by(u, c):      return await _handle_field(u, c)
 async def ask_issue_date(u, c):     return await _handle_field(u, c)
 async def ask_address(u, c):        return await _handle_field(u, c)
 async def ask_iban(u, c):           return await _handle_field(u, c)
+async def ask_gen_date(u, c):       return await _handle_field(u, c)
 
 
 async def _show_confirm(update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
@@ -1400,6 +1452,7 @@ def main():
         ASK_ISSUE_DATE:     _field_handlers(ask_issue_date),
         ASK_ADDRESS:        _field_handlers(ask_address),
         ASK_IBAN:           _field_handlers(ask_iban),
+        ASK_GEN_DATE:       _field_handlers(ask_gen_date),
     }
 
     conv = ConversationHandler(

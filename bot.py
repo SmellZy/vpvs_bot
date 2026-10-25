@@ -72,6 +72,8 @@ else:
 _FONT_REG_PATHS = [
     "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
     "/usr/share/fonts/liberation/LiberationSans-Regular.ttf",
+    "/Library/Fonts/Arial Unicode.ttf",          # macOS — full Unicode (Polish, etc.)
+    "/System/Library/Fonts/Supplemental/Arial.ttf",
     "/Library/Fonts/Arial.ttf",
     "C:/Windows/Fonts/arial.ttf",
 ]

@@ -820,6 +820,7 @@ def edit_pdf(pdf_bytes: bytes, bank: str, fields: dict) -> bytes:
     writer.add_metadata({
         "/Producer": "", "/Creator": "", "/Author": "",
         "/Title": "", "/Subject": "", "/Keywords": "",
+        "/CreationDate": "", "/ModDate": "", "/Trapped": "",
     })
 
     out = io.BytesIO()
@@ -1261,7 +1262,7 @@ async def cmd_confirm(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
 
     await update.message.reply_document(
         document=io.BytesIO(result_bytes),
-        filename=f"edited_{bank}_{datetime.now().strftime('%d%m%Y_%H%M')}.pdf",
+        filename=f"{bank}_{datetime.now().strftime('%d%m%Y_%H%M')}.pdf",
         caption=caption,
     )
     ctx.user_data.clear()
